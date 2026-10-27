@@ -21,7 +21,10 @@ def discover(explicit: str | None) -> list[dict]:
         return [{"path": os.path.abspath(explicit), "source": "explicit"}]
     names = ["pwsh.exe", "powershell.exe"] if is_windows() else ["pwsh"]
     on_path, _ = path_candidates(names)
-    return dedupe([(p, "path") for p in on_path] + [(p, "known") for p in known_powershell_locations()])
+    return dedupe(
+        [(p, "path") for p in on_path]
+        + [(p, "known") for p in known_powershell_locations()]
+    )
 
 
 def _encoded_helper() -> str:
@@ -32,12 +35,19 @@ def _encoded_helper() -> str:
     return enc
 
 
-def invoke(host: str, request: dict, timeout: float, max_bytes: int) -> tuple[dict | None, dict]:
+def invoke(
+    host: str, request: dict, timeout: float, max_bytes: int
+) -> tuple[dict | None, dict]:
     """固定の補助スクリプトを起動する。対象パスは stdin の JSON(base64) で渡し、コード文字列に混ぜない。"""
     payload = base64.b64encode(json.dumps(request).encode("utf-8"))
     argv = [host, "-NoProfile", "-NonInteractive", "-EncodedCommand", _encoded_helper()]
-    res = runner.run(argv, timeout=timeout, max_output_bytes=max_bytes, cwd=tempfile.gettempdir(),
-                     stdin_data=payload)
+    res = runner.run(
+        argv,
+        timeout=timeout,
+        max_output_bytes=max_bytes,
+        cwd=tempfile.gettempdir(),
+        stdin_data=payload,
+    )
     meta = {"reason_code": res.reason_code, "exit_code": res.exit_code}
     if res.reason_code:
         return None, meta

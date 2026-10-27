@@ -10,8 +10,8 @@ import time
 
 from . import runner
 from .collectors import dotnet as dn
-from .collectors import normalize_arch, process_arch
 from .collectors import msbuild as msb
+from .collectors import normalize_arch, process_arch
 from .collectors import powershell as psc
 from .models import Report
 from .parsers import FormatError
@@ -21,10 +21,9 @@ from .parsers import project as proj
 from .parsers.powershell import scan_csharp_literal, scan_requires
 from .rules import arch as arch_rules
 from .rules import dependency as dep_rules
+from .rules import format_command, log_rules
 from .rules import framework as fx_rules
-from .rules import log_rules
 from .rules import powershell as ps_rules
-from .rules import format_command
 
 MAX_TEXT = 16 * 1024 * 1024
 MAX_BINARY = 256 * 1024 * 1024
@@ -33,8 +32,15 @@ MAX_FILES = 10000
 MAX_PROJECTS_IN_SLN = 200
 BINARY_EXT = {".dll", ".exe", ".so"}
 PS_EXT = {".ps1", ".psm1", ".psd1"}
-ENV_ALLOWLIST = ("DOTNET_ROOT", "DOTNET_ROOT_X64", "DOTNET_ROOT_X86", "DOTNET_CLI_HOME",
-                 "NUGET_PACKAGES", "PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432")
+ENV_ALLOWLIST = (
+    "DOTNET_ROOT",
+    "DOTNET_ROOT_X64",
+    "DOTNET_ROOT_X86",
+    "DOTNET_CLI_HOME",
+    "NUGET_PACKAGES",
+    "PROCESSOR_ARCHITECTURE",
+    "PROCESSOR_ARCHITEW6432",
+)
 
 
 class UsageError(Exception):
@@ -43,8 +49,10 @@ class UsageError(Exception):
 
 def os_arch() -> str:
     if sys.platform == "win32":
-        return normalize_arch(os.environ.get("PROCESSOR_ARCHITEW6432")
-                              or os.environ.get("PROCESSOR_ARCHITECTURE"))
+        return normalize_arch(
+            os.environ.get("PROCESSOR_ARCHITEW6432")
+            or os.environ.get("PROCESSOR_ARCHITECTURE")
+        )
     return normalize_arch(platform.machine())
 
 
@@ -65,7 +73,11 @@ def find_project_root(target: str) -> str:
             names = os.listdir(cur)
         except OSError:
             break
-        if ".git" in names or "global.json" in names or any(n.endswith(".sln") for n in names):
+        if (
+            ".git" in names
+            or "global.json" in names
+            or any(n.endswith(".sln") for n in names)
+        ):
             return cur
         parent = os.path.dirname(cur)
         if parent == cur:
@@ -105,12 +117,19 @@ class Session:
             self.progress(f"dotnet を照会: {c['path']}")
             info = dn.query(c["path"], a.timeout, a.max_output_bytes)
             info.update(source=c["source"], path_rank=c.get("path_rank"))
-            info["fact"] = r.add_fact("dotnet", {k: v for k, v in info.items() if k != "fact"},
-                                      location=c["path"], complete=not info["errors"])
+            info["fact"] = r.add_fact(
+                "dotnet",
+                {k: v for k, v in info.items() if k != "fact"},
+                location=c["path"],
+                complete=not info["errors"],
+            )
             err = info["errors"][0] if info["errors"] else None
-            r.add_check(f"dotnet-query:{c['path']}", "unknown" if err else "completed",
-                        reason_code=err["reason_code"] if err else None,
-                        detail=f"{err['query']} に失敗" if err else None)
+            r.add_check(
+                f"dotnet-query:{c['path']}",
+                "unknown" if err else "completed",
+                reason_code=err["reason_code"] if err else None,
+                detail=f"{err['query']} に失敗" if err else None,
+            )
             infos.append(info)
         self._dotnets = infos
         return infos
@@ -130,14 +149,22 @@ class Session:
         hosts = []
         for c in cands:
             self.progress(f"PowerShell を照会: {c['path']}")
-            data, meta = psc.invoke(c["path"], {"mode": "info"}, a.timeout, a.max_output_bytes)
+            data, meta = psc.invoke(
+                c["path"], {"mode": "info"}, a.timeout, a.max_output_bytes
+            )
             if data is None:
-                r.add_check(f"ps-host:{c['path']}", "unknown",
-                            reason_code=meta["reason_code"] or "HELPER_FAILED")
+                r.add_check(
+                    f"ps-host:{c['path']}",
+                    "unknown",
+                    reason_code=meta["reason_code"] or "HELPER_FAILED",
+                )
                 continue
             data.update(path=c["path"], source=c["source"])
-            data["fact"] = r.add_fact("powershell", {k: v for k, v in data.items() if k != "fact"},
-                                      location=c["path"])
+            data["fact"] = r.add_fact(
+                "powershell",
+                {k: v for k, v in data.items() if k != "fact"},
+                location=c["path"],
+            )
             r.add_check(f"ps-host:{c['path']}", "completed")
             hosts.append(data)
         self._ps = hosts
@@ -147,14 +174,23 @@ class Session:
     def msbuilds(self) -> list[dict]:
         if self._msbuilds is None:
             cands = msb.discover(self.args.msbuild_path)
-            self.report.add_fact("msbuild-discovery", {
-                "candidates": cands, "searched": ["--msbuild-path"] if self.args.msbuild_path else
-                ["PATH", "known Visual Studio / Build Tools locations"],
-                "note": "存在のみ確認。実行・バージョン照会はしていない"})
+            self.report.add_fact(
+                "msbuild-discovery",
+                {
+                    "candidates": cands,
+                    "searched": ["--msbuild-path"]
+                    if self.args.msbuild_path
+                    else ["PATH", "known Visual Studio / Build Tools locations"],
+                    "note": "存在のみ確認。実行・バージョン照会はしていない",
+                },
+            )
             missing = [c for c in cands if not c.get("exists")]
-            self.report.add_check("msbuild-discovery", "unknown" if missing else "completed",
-                                  reason_code="TOOL_MISSING" if missing else None,
-                                  detail="指定された MSBuild が存在しない" if missing else None)
+            self.report.add_check(
+                "msbuild-discovery",
+                "unknown" if missing else "completed",
+                reason_code="TOOL_MISSING" if missing else None,
+                detail="指定された MSBuild が存在しない" if missing else None,
+            )
             self._msbuilds = cands
         return self._msbuilds
 
@@ -174,12 +210,19 @@ class Session:
 
 # ------------------------------------------------------------------ env
 def run_env(session: Session) -> None:
-    r, a = session.report, session.args
-    r.add_fact("os", {
-        "system": platform.system(), "release": platform.release(), "os_arch": os_arch(),
-        "doctor_process_arch": process_arch(), "python": platform.python_version(),
-        "wsl": is_wsl(),
-        "env": {k: os.environ[k] for k in ENV_ALLOWLIST if k in os.environ}})
+    r, _a = session.report, session.args
+    r.add_fact(
+        "os",
+        {
+            "system": platform.system(),
+            "release": platform.release(),
+            "os_arch": os_arch(),
+            "doctor_process_arch": process_arch(),
+            "python": platform.python_version(),
+            "wsl": is_wsl(),
+            "env": {k: os.environ[k] for k in ENV_ALLOWLIST if k in os.environ},
+        },
+    )
     r.add_check("os-info", "completed")
     if session.static_only:
         for cid in ("dotnet-discovery", "powershell-discovery", "msbuild-discovery"):
@@ -195,7 +238,9 @@ def run_env(session: Session) -> None:
 def _open_checked(path: str, limit: int):
     size = os.path.getsize(path)
     if size > limit:
-        raise FormatError("INPUT_LIMIT", f"入力が上限 {limit} bytes を超えている ({size} bytes)")
+        raise FormatError(
+            "INPUT_LIMIT", f"入力が上限 {limit} bytes を超えている ({size} bytes)"
+        )
     return open(path, "rb"), size
 
 
@@ -221,16 +266,21 @@ def inspect_binary(session: Session, path: str, rel: str) -> None:
             with f:
                 dinfo = binparse.parse_binary(f, size)
         except (FormatError, OSError) as e:
-            r.add_check(f"native-dep:{os.path.basename(dep)}", "unknown",
-                        reason_code=getattr(e, "reason_code", "ACCESS_DENIED"),
-                        detail=str(e))
+            r.add_check(
+                f"native-dep:{os.path.basename(dep)}",
+                "unknown",
+                reason_code=getattr(e, "reason_code", "ACCESS_DENIED"),
+                detail=str(e),
+            )
             continue
         did = r.add_fact("binary-header", dinfo, location=os.path.basename(dep))
         r.add_check(f"native-dep:{os.path.basename(dep)}", "completed")
         deps.append((did, os.path.basename(dep), dinfo))
     arch_rules.evaluate_os(r, fid, os.path.basename(path), info)
     arch_rules.evaluate_binary(r, fid, os.path.basename(path), info, a.host_arch, deps)
-    r.add_check(f"host-constraint:{rel}", "completed" if a.host_arch else "not_applicable")
+    r.add_check(
+        f"host-constraint:{rel}", "completed" if a.host_arch else "not_applicable"
+    )
 
 
 def inspect_project(session: Session, path: str, rel: str) -> None:
@@ -245,19 +295,39 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
         r.add_check(cid, "unknown", reason_code="ACCESS_DENIED", detail=str(e))
         return
     summary = {name: list(defs) for name, defs in p["properties"].items()}
-    fid = r.add_fact("project", {
-        "sdk_style": p["sdk_style"], "sdk": p["sdk"], "tfms": p["tfms"],
-        "tfm_status": p["tfm_status"], "properties": summary, "imports": p["imports"],
-        "references": {"project": p["references"]["project"],
-                       "package_count": len(p["references"]["package"]),
-                       "assembly_references": p["references"]["reference"]},
-        "directory_build_props": p["directory_build_props"],
-        "directory_packages_props": p["directory_packages_props"],
-        "packages_config": p["uses_packages_config"]}, location=rel)
-    unevaluated = [n for n, defs in p["properties"].items() if any(not d["evaluated"] for d in defs)]
+    fid = r.add_fact(
+        "project",
+        {
+            "sdk_style": p["sdk_style"],
+            "sdk": p["sdk"],
+            "tfms": p["tfms"],
+            "tfm_status": p["tfm_status"],
+            "properties": summary,
+            "imports": p["imports"],
+            "references": {
+                "project": p["references"]["project"],
+                "package_count": len(p["references"]["package"]),
+                "assembly_references": p["references"]["reference"],
+            },
+            "directory_build_props": p["directory_build_props"],
+            "directory_packages_props": p["directory_packages_props"],
+            "packages_config": p["uses_packages_config"],
+        },
+        location=rel,
+    )
+    unevaluated = [
+        n
+        for n, defs in p["properties"].items()
+        if any(not d["evaluated"] for d in defs)
+    ]
     if unevaluated:
-        r.add_check(f"project-effective-config:{rel}", "unknown", reason_code="UNEVALUATED_PROPERTY",
-                    detail="条件付き/式を含む属性は実効値を確定していない: " + ", ".join(sorted(unevaluated)))
+        r.add_check(
+            f"project-effective-config:{rel}",
+            "unknown",
+            reason_code="UNEVALUATED_PROPERTY",
+            detail="条件付き/式を含む属性は実効値を確定していない: "
+            + ", ".join(sorted(unevaluated)),
+        )
     else:
         r.add_check(f"project-effective-config:{rel}", "completed")
     r.add_check(cid, "completed")
@@ -275,12 +345,22 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
             gj = proj.parse_global_json(gj_path)
             gj_fact = r.add_fact("global.json", gj, location=gj_path)
             if gj["unsupported_keys"]:
-                r.add_check("global-json-settings", "unknown", reason_code="UNSUPPORTED_SETTING",
-                            detail="未対応の設定を評価していない: " + ", ".join(gj["unsupported_keys"]))
+                r.add_check(
+                    "global-json-settings",
+                    "unknown",
+                    reason_code="UNSUPPORTED_SETTING",
+                    detail="未対応の設定を評価していない: "
+                    + ", ".join(gj["unsupported_keys"]),
+                )
             else:
                 r.add_check("global-json-settings", "completed")
         except FormatError as e:
-            r.add_check("global-json-settings", "unknown", reason_code=e.reason_code, detail=e.detail)
+            r.add_check(
+                "global-json-settings",
+                "unknown",
+                reason_code=e.reason_code,
+                detail=e.detail,
+            )
 
     # 環境照会
     dotnet_info, selection = None, None
@@ -290,14 +370,32 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
         else:
             dotnet_info = session.primary_dotnet()
             if dotnet_info is None:
-                r.add_check(f"sdk-selection:{rel}", "unknown", reason_code="TOOL_MISSING",
-                            detail="dotnet が見つからない(探索範囲: " +
-                                   ", ".join(session._dotnet_scope.get("searched", ["--dotnet-path"])) + ")")
+                r.add_check(
+                    f"sdk-selection:{rel}",
+                    "unknown",
+                    reason_code="TOOL_MISSING",
+                    detail="dotnet が見つからない(探索範囲: "
+                    + ", ".join(
+                        session._dotnet_scope.get("searched", ["--dotnet-path"])
+                    )
+                    + ")",
+                )
             else:
-                selection = dn.select_sdk(dotnet_info["path"], project_dir, a.timeout, a.max_output_bytes)
+                selection = dn.select_sdk(
+                    dotnet_info["path"], project_dir, a.timeout, a.max_output_bytes
+                )
                 r.add_fact("sdk-selection", selection, location=project_dir)
-                if selection.get("reason_code") in ("TIMEOUT", "TOOL_MISSING", "ACCESS_DENIED", "OUTPUT_LIMIT"):
-                    r.add_check(f"sdk-selection:{rel}", "unknown", reason_code=selection["reason_code"])
+                if selection.get("reason_code") in (
+                    "TIMEOUT",
+                    "TOOL_MISSING",
+                    "ACCESS_DENIED",
+                    "OUTPUT_LIMIT",
+                ):
+                    r.add_check(
+                        f"sdk-selection:{rel}",
+                        "unknown",
+                        reason_code=selection["reason_code"],
+                    )
                 else:
                     r.add_check(f"sdk-selection:{rel}", "completed")
     netfx = None
@@ -309,31 +407,57 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
     if p["sdk_style"] and os.path.isfile(assets_path):
         try:
             assets = proj.read_assets(assets_path)
-            assets_fact = r.add_fact("project.assets.json", {"targets": assets["targets"]},
-                                     location=os.path.relpath(assets_path, project_dir))
+            assets_fact = r.add_fact(
+                "project.assets.json",
+                {"targets": assets["targets"]},
+                location=os.path.relpath(assets_path, project_dir),
+            )
         except FormatError as e:
-            r.add_check(f"assets:{rel}", "unknown", reason_code=e.reason_code, detail=e.detail)
+            r.add_check(
+                f"assets:{rel}", "unknown", reason_code=e.reason_code, detail=e.detail
+            )
 
     fx_rules.evaluate_project(
-        r, p, fid, dotnet=dotnet_info, selection=selection, global_json=gj, gj_fact=gj_fact,
-        assets=assets, assets_fact=assets_fact, framework=a.framework, runtime=a.runtime,
-        netfx=netfx, name=os.path.basename(path))
+        r,
+        p,
+        fid,
+        dotnet=dotnet_info,
+        selection=selection,
+        global_json=gj,
+        gj_fact=gj_fact,
+        assets=assets,
+        assets_fact=assets_fact,
+        framework=a.framework,
+        runtime=a.runtime,
+        netfx=netfx,
+        name=os.path.basename(path),
+    )
     dep_rules.evaluate_platform(r, p, fid, a.host_arch, a.runtime)
     dep_rules.evaluate_langversion(r, p, fid, (selection or {}).get("selected"))
     if p["sdk_style"]:
         dep_rules.evaluate_runtime(r, p, fid, dotnet_info)
     unresolved = dep_rules.evaluate_references(r, p, fid, project_dir)
     if unresolved:
-        r.add_check(f"references:{rel}", "unknown", reason_code="UNEVALUATED_PROPERTY",
-                    detail=f"式を含む参照 {unresolved} 件は静的に解決していない")
+        r.add_check(
+            f"references:{rel}",
+            "unknown",
+            reason_code="UNEVALUATED_PROPERTY",
+            detail=f"式を含む参照 {unresolved} 件は静的に解決していない",
+        )
     arts = proj.find_build_artifacts(project_dir)
     arts_fact = r.add_fact("build-artifacts", arts, location=project_dir)
     dep_rules.evaluate_runtimeconfigs(r, arts, arts_fact, dotnet_info)
     if p["sdk_style"]:
-        dep_rules.evaluate_restore_state(r, p, fid, os.path.abspath(path), assets_path, arts, arts_fact)
+        dep_rules.evaluate_restore_state(
+            r, p, fid, os.path.abspath(path), assets_path, arts, arts_fact
+        )
     if p["uses_packages_config"]:
-        r.add_check(f"packages-config:{rel}", "unknown", reason_code="UNSUPPORTED_FORMAT",
-                    detail="packages.config の解決状態は未評価")
+        r.add_check(
+            f"packages-config:{rel}",
+            "unknown",
+            reason_code="UNSUPPORTED_FORMAT",
+            detail="packages.config の解決状態は未評価",
+        )
 
 
 def inspect_solution(session: Session, path: str, rel: str) -> None:
@@ -341,20 +465,34 @@ def inspect_solution(session: Session, path: str, rel: str) -> None:
     try:
         projects = proj.parse_solution(path, MAX_TEXT)
     except (FormatError, OSError) as e:
-        r.add_check(f"solution:{rel}", "unknown", reason_code=getattr(e, "reason_code", "ACCESS_DENIED"),
-                    detail=str(e))
+        r.add_check(
+            f"solution:{rel}",
+            "unknown",
+            reason_code=getattr(e, "reason_code", "ACCESS_DENIED"),
+            detail=str(e),
+        )
         return
-    r.add_fact("solution", {"projects": [os.path.basename(p) for p in projects]}, location=rel)
+    r.add_fact(
+        "solution", {"projects": [os.path.basename(p) for p in projects]}, location=rel
+    )
     r.add_check(f"solution:{rel}", "completed")
     for p in projects[:MAX_PROJECTS_IN_SLN]:
         if os.path.isfile(p):
             inspect_project(session, p, os.path.relpath(p, os.path.dirname(path)))
         else:
-            r.add_check(f"project:{os.path.basename(p)}", "unknown", reason_code="NOT_FOUND",
-                        detail="ソリューションが参照するプロジェクトが存在しない")
+            r.add_check(
+                f"project:{os.path.basename(p)}",
+                "unknown",
+                reason_code="NOT_FOUND",
+                detail="ソリューションが参照するプロジェクトが存在しない",
+            )
     if len(projects) > MAX_PROJECTS_IN_SLN:
-        r.add_check(f"solution-limit:{rel}", "unknown", reason_code="LIMIT",
-                    detail=f"プロジェクト数が上限 {MAX_PROJECTS_IN_SLN} を超えた")
+        r.add_check(
+            f"solution-limit:{rel}",
+            "unknown",
+            reason_code="LIMIT",
+            detail=f"プロジェクト数が上限 {MAX_PROJECTS_IN_SLN} を超えた",
+        )
 
 
 def _decode_script(path: str, encoding: str | None = None) -> str | None:
@@ -383,8 +521,12 @@ def inspect_powershell(session: Session, path: str, rel: str) -> None:
     if os.path.splitext(path)[1].lower() != ".psd1":
         text = _decode_script(path, a.input_encoding)
         if text is None:
-            r.add_check(f"ps-requires:{rel}", "unknown", reason_code="DECODE_ERROR",
-                        detail="#requires を復号できない(BOM なしは UTF-8 既定。--input-encoding で指定可)")
+            r.add_check(
+                f"ps-requires:{rel}",
+                "unknown",
+                reason_code="DECODE_ERROR",
+                detail="#requires を復号できない(BOM なしは UTF-8 既定。--input-encoding で指定可)",
+            )
         else:
             req = scan_requires(text)
             r.add_fact("ps-requires", req, location=rel)
@@ -394,26 +536,41 @@ def inspect_powershell(session: Session, path: str, rel: str) -> None:
         return
     hosts = session.ps_hosts()
     if not hosts:
-        r.add_check(f"ps-parse:{rel}", "unknown", reason_code="TOOL_MISSING",
-                    detail="構文解析に使える PowerShell ホストがない")
+        r.add_check(
+            f"ps-parse:{rel}",
+            "unknown",
+            reason_code="TOOL_MISSING",
+            detail="構文解析に使える PowerShell ホストがない",
+        )
         return
     for h in hosts:
         label = f"{h.get('edition')} {h.get('ps_version')} ({h.get('process_arch')})"
         cid = f"ps-parse:{rel}@{h['path']}"
-        data, meta = psc.invoke(h["path"], {"mode": "parse", "path": os.path.abspath(path)},
-                                a.timeout, a.max_output_bytes)
+        data, meta = psc.invoke(
+            h["path"],
+            {"mode": "parse", "path": os.path.abspath(path)},
+            a.timeout,
+            a.max_output_bytes,
+        )
         if data is None:
-            r.add_check(cid, "unknown", reason_code=meta["reason_code"] or "HELPER_FAILED")
+            r.add_check(
+                cid, "unknown", reason_code=meta["reason_code"] or "HELPER_FAILED"
+            )
             continue
-        fid = r.add_fact("ps-parse", {k: v for k, v in data.items() if k not in ("references",)},
-                         location=rel)
+        fid = r.add_fact(
+            "ps-parse",
+            {k: v for k, v in data.items() if k not in ("references",)},
+            location=rel,
+        )
         r.add_check(cid, "completed")
         ps_rules.evaluate_parse(r, name, label, fid, data)
         merged = req or {}
         if data.get("requires"):
             merged = {**merged, **{k: v for k, v in data["requires"].items() if v}}
         ps_rules.evaluate_requires(r, name, label, fid, h, merged)
-        ps_rules.evaluate_files(r, name, fid, os.path.dirname(os.path.abspath(path)), data)
+        ps_rules.evaluate_files(
+            r, name, fid, os.path.dirname(os.path.abspath(path)), data
+        )
         if data.get("manifest"):
             ps_rules.evaluate_manifest(r, name, label, fid, h, data["manifest"])
         dyn = 0
@@ -424,8 +581,12 @@ def inspect_powershell(session: Session, path: str, rel: str) -> None:
             r.add_fact("ps-reference", ref, location=f"{rel}:{ref.get('line')}")
             dyn += ref.get("kind") == "dynamic"
         if dyn:
-            r.add_check(f"ps-static-references:{rel}@{h['path']}", "unknown", reason_code="DYNAMIC_CODE",
-                        detail=f"動的な引数 {dyn} 件は静的に解析できない")
+            r.add_check(
+                f"ps-static-references:{rel}@{h['path']}",
+                "unknown",
+                reason_code="DYNAMIC_CODE",
+                detail=f"動的な引数 {dyn} 件は静的に解析できない",
+            )
 
 
 def _walk(root: str):
@@ -468,8 +629,12 @@ def inspect_file(session: Session, path: str, rel: str) -> None:
             found = sorted(f for f in os.listdir(cur) if f.endswith(".csproj"))
             if found:
                 if len(found) > 1:
-                    r.add_check(f"cs-project:{rel}", "unknown", reason_code="AMBIGUOUS_PROJECT",
-                                detail="同じ場所に複数の .csproj がある")
+                    r.add_check(
+                        f"cs-project:{rel}",
+                        "unknown",
+                        reason_code="AMBIGUOUS_PROJECT",
+                        detail="同じ場所に複数の .csproj がある",
+                    )
                 else:
                     inspect_project(session, os.path.join(cur, found[0]), found[0])
                     r.add_check(f"cs-project:{rel}", "completed")
@@ -478,11 +643,19 @@ def inspect_file(session: Session, path: str, rel: str) -> None:
             if parent == cur:
                 break
             cur = parent
-        r.add_check(f"cs-project:{rel}", "unknown", reason_code="NOT_FOUND",
-                    detail="所属する .csproj が見つからない")
+        r.add_check(
+            f"cs-project:{rel}",
+            "unknown",
+            reason_code="NOT_FOUND",
+            detail="所属する .csproj が見つからない",
+        )
     else:
-        r.add_check(f"file:{rel}", "unknown", reason_code="UNSUPPORTED_FORMAT",
-                    detail=f"未対応の拡張子: {ext or '(なし)'}")
+        r.add_check(
+            f"file:{rel}",
+            "unknown",
+            reason_code="UNSUPPORTED_FORMAT",
+            detail=f"未対応の拡張子: {ext or '(なし)'}",
+        )
 
 
 def run_inspect(session: Session, target: str) -> None:
@@ -491,14 +664,20 @@ def run_inspect(session: Session, target: str) -> None:
         raise UsageError(f"対象が存在しない: {target}")
     if os.path.isdir(target):
         files, truncated = _walk(target)
-        targets = [f for f in files if os.path.splitext(f)[1].lower()
-                   in BINARY_EXT | PS_EXT | {".csproj", ".sln"}]
+        targets = [
+            f
+            for f in files
+            if os.path.splitext(f)[1].lower()
+            in BINARY_EXT | PS_EXT | {".csproj", ".sln"}
+        ]
         # .sln があれば、その配下の .csproj は sln 経由で評価されるため重複を避ける
         slns = [f for f in targets if f.endswith(".sln")]
         covered = set()
         for s in slns:
             try:
-                covered.update(os.path.normcase(p) for p in proj.parse_solution(s, MAX_TEXT))
+                covered.update(
+                    os.path.normcase(p) for p in proj.parse_solution(s, MAX_TEXT)
+                )
             except (FormatError, OSError):
                 pass
         for f in targets:
@@ -506,13 +685,21 @@ def run_inspect(session: Session, target: str) -> None:
                 continue
             inspect_file(session, f, os.path.relpath(f, target))
         if truncated:
-            r.add_check("directory-walk", "unknown", reason_code="LIMIT",
-                        detail=f"深さ {MAX_DEPTH} / {MAX_FILES} ファイルの上限で探索を打ち切った")
+            r.add_check(
+                "directory-walk",
+                "unknown",
+                reason_code="LIMIT",
+                detail=f"深さ {MAX_DEPTH} / {MAX_FILES} ファイルの上限で探索を打ち切った",
+            )
         else:
             r.add_check("directory-walk", "completed")
         if not targets:
-            r.add_check("directory-targets", "unknown", reason_code="UNSUPPORTED_FORMAT",
-                        detail="対応する形式のファイルが見つからない")
+            r.add_check(
+                "directory-targets",
+                "unknown",
+                reason_code="UNSUPPORTED_FORMAT",
+                detail="対応する形式のファイルが見つからない",
+            )
     else:
         inspect_file(session, target, os.path.basename(target))
 
@@ -521,13 +708,17 @@ def run_inspect(session: Session, target: str) -> None:
 def run_explain(session: Session, source: str) -> None:
     r, a = session.report, session.args
     if source.lower().endswith(".binlog"):
-        raise UsageError("バイナリログ(.binlog)の読み込みは未対応。テキストログを指定してください")
+        raise UsageError(
+            "バイナリログ(.binlog)の読み込みは未対応。テキストログを指定してください"
+        )
     project_findings_start = len(r.records)
     if a.project:
         if not os.path.isfile(a.project):
             raise UsageError(f"--project が存在しない: {a.project}")
         inspect_file(session, a.project, os.path.basename(a.project))
-    env_records = {rec["id"]: rec["rule_id"] for rec in r.records[project_findings_start:]}
+    env_records = {
+        rec["id"]: rec["rule_id"] for rec in r.records[project_findings_start:]
+    }
 
     try:
         if source == "-":
@@ -541,7 +732,9 @@ def run_explain(session: Session, source: str) -> None:
     except OSError as e:
         raise UsageError(f"ログを開けない: {e}")
     r.add_check("log-parse", "completed")
-    created = log_rules.evaluate_log(r, diags, truncated=truncated, restore_target=a.project)
+    created = log_rules.evaluate_log(
+        r, diags, truncated=truncated, restore_target=a.project
+    )
     for fid, rule_id, _ in created:
         for eid, erule in env_records.items():
             if erule == rule_id:
@@ -559,8 +752,16 @@ def _link_prerequisite_failures(r: Report, created, project_path: str | None) ->
         if rule_id != "DEP001":
             continue
         for p in projects:
-            path = p if os.path.isfile(p) else (project_path if project_path and
-                                                os.path.basename(project_path) == os.path.basename(p) else None)
+            path = (
+                p
+                if os.path.isfile(p)
+                else (
+                    project_path
+                    if project_path
+                    and os.path.basename(project_path) == os.path.basename(p)
+                    else None
+                )
+            )
             if not path:
                 continue
             try:
@@ -568,7 +769,9 @@ def _link_prerequisite_failures(r: Report, created, project_path: str | None) ->
             except (FormatError, OSError):
                 continue
             for ref in refs:
-                for other in by_name.get(os.path.basename(ref.replace("\\", "/")).lower(), []):
+                for other in by_name.get(
+                    os.path.basename(ref.replace("\\", "/")).lower(), []
+                ):
                     if other != fid:
                         r.link(fid, other)
 
@@ -578,8 +781,10 @@ def resolve_build_target(target: str) -> str:
     if os.path.isdir(target):
         found = sorted(f for f in os.listdir(target) if f.endswith((".sln", ".csproj")))
         if len(found) != 1:
-            raise UsageError("ビルド対象が曖昧(または見つからない)。1 つ選択して指定してください: "
-                             + (", ".join(found) if found else "候補なし"))
+            raise UsageError(
+                "ビルド対象が曖昧(または見つからない)。1 つ選択して指定してください: "
+                + (", ".join(found) if found else "候補なし")
+            )
         return os.path.join(target, found[0])
     if not os.path.isfile(target) or not target.lower().endswith((".sln", ".csproj")):
         raise UsageError("build の対象は単一の .csproj または .sln")
@@ -596,11 +801,15 @@ def plan_build(session: Session, target: str) -> dict:
             sdk_style = proj.parse_project(target, MAX_TEXT)["sdk_style"]
         except (FormatError, OSError) as e:
             raise UsageError(f"プロジェクトを読めない: {e}")
-    use_msbuild = bool(a.msbuild_path) and (not sdk_style or target.lower().endswith(".sln"))
+    use_msbuild = bool(a.msbuild_path) and (
+        not sdk_style or target.lower().endswith(".sln")
+    )
     if not sdk_style and not a.msbuild_path:
         raise UsageError("旧形式プロジェクトのビルドには --msbuild-path が必要")
     if not sdk_style and sys.platform != "win32":
-        raise UsageError("旧形式プロジェクトの実ビルドは Windows のみ(Linux では静的診断を使用)")
+        raise UsageError(
+            "旧形式プロジェクトの実ビルドは Windows のみ(Linux では静的診断を使用)"
+        )
     if use_msbuild:
         argv = [os.path.abspath(a.msbuild_path), target, "-nologo", "-v:minimal"]
         if a.restore:
@@ -620,7 +829,9 @@ def plan_build(session: Session, target: str) -> dict:
                 raise UsageError("--static-only では build できない")
             primary = session.primary_dotnet()
             if primary is None:
-                raise UsageError("dotnet が見つからない。--dotnet-path で指定してください")
+                raise UsageError(
+                    "dotnet が見つからない。--dotnet-path で指定してください"
+                )
             dotnet_path = primary["path"]
         argv = [os.path.abspath(dotnet_path), "build", target, "-nologo", "-v:minimal"]
         if not a.restore:
@@ -633,12 +844,20 @@ def plan_build(session: Session, target: str) -> dict:
             argv += ["-r", a.runtime]
         if a.platform:
             argv.append(f"-p:Platform={a.platform}")
-    return {"argv": argv, "command": format_command(argv), "cwd": project_dir, "target": target,
-            "restore_allowed": bool(a.restore),
-            "may_write": [os.path.join(project_dir, "bin"), os.path.join(project_dir, "obj")],
-            "timeout_seconds": a.build_timeout,
-            "notice": "ビルドは対象プロジェクトの MSBuild ターゲット/アナライザー等のコードを実行し得る。"
-                      "--no-restore はネットワーク遮断やサンドボックスではない。"}
+    return {
+        "argv": argv,
+        "command": format_command(argv),
+        "cwd": project_dir,
+        "target": target,
+        "restore_allowed": bool(a.restore),
+        "may_write": [
+            os.path.join(project_dir, "bin"),
+            os.path.join(project_dir, "obj"),
+        ],
+        "timeout_seconds": a.build_timeout,
+        "notice": "ビルドは対象プロジェクトの MSBuild ターゲット/アナライザー等のコードを実行し得る。"
+        "--no-restore はネットワーク遮断やサンドボックスではない。",
+    }
 
 
 def run_build(session: Session, target: str) -> None:
@@ -646,28 +865,47 @@ def run_build(session: Session, target: str) -> None:
     target = resolve_build_target(target)
     r.target = target
     plan = plan_build(session, target)
-    r.add_fact("build-plan", {k: v for k, v in plan.items() if k != "argv"}, location=plan["cwd"])
+    r.add_fact(
+        "build-plan",
+        {k: v for k, v in plan.items() if k != "argv"},
+        location=plan["cwd"],
+    )
     r.execution["planned_command"] = plan["command"]
     r.execution["cwd"] = plan["cwd"]
     if a.dry_run:
         r.add_check("build-plan", "completed")
         return
     if not runner.can_manage_process_tree():
-        raise UsageError("子プロセスのツリー停止を保証できない環境では実ビルドを開始しない")
+        raise UsageError(
+            "子プロセスのツリー停止を保証できない環境では実ビルドを開始しない"
+        )
     session.progress(f"ビルド開始: {plan['command']}")
     start = time.monotonic()
-    res = runner.run(plan["argv"], timeout=a.build_timeout, max_output_bytes=a.max_output_bytes,
-                     cwd=plan["cwd"], env=dn.dotnet_env())
-    r.execution.update(build_started=res.reason_code not in ("TOOL_MISSING", "ACCESS_DENIED", "EXEC_FAILED"),
-                       child_exit_code=res.exit_code, duration_seconds=round(time.monotonic() - start, 1))
+    res = runner.run(
+        plan["argv"],
+        timeout=a.build_timeout,
+        max_output_bytes=a.max_output_bytes,
+        cwd=plan["cwd"],
+        env=dn.dotnet_env(),
+    )
+    r.execution.update(
+        build_started=res.reason_code
+        not in ("TOOL_MISSING", "ACCESS_DENIED", "EXEC_FAILED"),
+        child_exit_code=res.exit_code,
+        duration_seconds=round(time.monotonic() - start, 1),
+    )
     if res.reason_code in ("TOOL_MISSING", "ACCESS_DENIED", "EXEC_FAILED"):
         raise UsageError(f"ビルドツールを起動できない: {res.reason_code}: {res.detail}")
     r.execution["notice"] = "ビルドの成否であり、対象アプリの実行成功ではない。"
     text = (res.text("stdout") + "\n" + res.text("stderr")).encode("utf-8")
     diags, truncated = logparse.parse_log(io.BytesIO(text), MAX_TEXT + 1, "utf-8")
     if res.killed:
-        r.add_check("build-run", "unknown", reason_code=res.reason_code,
-                    detail="上限に達したため子プロセスツリーを停止した。部分ログのみ解析")
+        r.add_check(
+            "build-run",
+            "unknown",
+            reason_code=res.reason_code,
+            detail="上限に達したため子プロセスツリーを停止した。部分ログのみ解析",
+        )
     else:
         r.add_check("build-run", "completed")
         r.build_failed = res.exit_code != 0
@@ -680,6 +918,12 @@ def run_build(session: Session, target: str) -> None:
                 if rec["rule_id"] == rule_id:
                     r.link(fid, rec["id"])
     if res.exit_code not in (0, None) and not diags and not res.killed:
-        r.add_finding("BUILD000", "UNKNOWN", "error", f"ビルドが終了コード {res.exit_code} で失敗",
-                      meaning="既知の診断を含むログが得られなかった。", limit="出力に診断行がない。",
-                      next_steps=["ビルドを単独で再実行して出力を確認する"])
+        r.add_finding(
+            "BUILD000",
+            "UNKNOWN",
+            "error",
+            f"ビルドが終了コード {res.exit_code} で失敗",
+            meaning="既知の診断を含むログが得られなかった。",
+            limit="出力に診断行がない。",
+            next_steps=["ビルドを単独で再実行して出力を確認する"],
+        )

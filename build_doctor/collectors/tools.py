@@ -40,13 +40,23 @@ def existing(paths: list[str]) -> list[str]:
 
 def known_dotnet_locations() -> list[str]:
     exe = "dotnet.exe" if is_windows() else "dotnet"
-    roots = [os.environ.get(k) for k in ("DOTNET_ROOT", "DOTNET_ROOT_X64", "DOTNET_ROOT_X86")]
+    roots = [
+        os.environ.get(k) for k in ("DOTNET_ROOT", "DOTNET_ROOT_X64", "DOTNET_ROOT_X86")
+    ]
     if is_windows():
-        roots += [os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "dotnet"),
-                  os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "dotnet")]
+        roots += [
+            os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "dotnet"),
+            os.path.join(
+                os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "dotnet"
+            ),
+        ]
     else:
-        roots += ["/usr/share/dotnet", "/usr/lib/dotnet", "/usr/local/share/dotnet",
-                  os.path.expanduser("~/.dotnet")]
+        roots += [
+            "/usr/share/dotnet",
+            "/usr/lib/dotnet",
+            "/usr/local/share/dotnet",
+            os.path.expanduser("~/.dotnet"),
+        ]
     return existing([os.path.join(r, exe) for r in roots if r and os.path.isabs(r)])
 
 
@@ -55,11 +65,21 @@ def known_powershell_locations() -> list[str]:
         pf = os.environ.get("ProgramFiles", r"C:\Program Files")
         pf86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
         win = os.environ.get("SystemRoot", r"C:\Windows")
-        cands = [os.path.join(pf, "PowerShell", "7", "pwsh.exe"),
-                 os.path.join(pf86, "PowerShell", "7", "pwsh.exe"),
-                 os.path.join(win, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-                 os.path.join(win, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe")]
+        cands = [
+            os.path.join(pf, "PowerShell", "7", "pwsh.exe"),
+            os.path.join(pf86, "PowerShell", "7", "pwsh.exe"),
+            os.path.join(
+                win, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
+            ),
+            os.path.join(
+                win, "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe"
+            ),
+        ]
     else:
-        cands = ["/opt/microsoft/powershell/7/pwsh", "/usr/bin/pwsh", "/usr/local/bin/pwsh",
-                 os.path.expanduser("~/.dotnet/tools/pwsh")]
+        cands = [
+            "/opt/microsoft/powershell/7/pwsh",
+            "/usr/bin/pwsh",
+            "/usr/local/bin/pwsh",
+            os.path.expanduser("~/.dotnet/tools/pwsh"),
+        ]
     return existing(cands)

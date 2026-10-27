@@ -10,9 +10,13 @@ from .. import runner
 from . import is_windows, normalize_arch
 from .tools import dedupe, known_dotnet_locations, path_candidates
 
-DOTNET_ENV = {"DOTNET_NOLOGO": "1", "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-              "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1", "DOTNET_CLI_UI_LANGUAGE": "en",
-              "MSBUILDDISABLENODEREUSE": "1"}
+DOTNET_ENV = {
+    "DOTNET_NOLOGO": "1",
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_SKIP_FIRST_TIME_EXPERIENCE": "1",
+    "DOTNET_CLI_UI_LANGUAGE": "en",
+    "MSBUILDDISABLENODEREUSE": "1",
+}
 
 
 def dotnet_env() -> dict[str, str]:
@@ -24,13 +28,21 @@ def dotnet_env() -> dict[str, str]:
 def discover(explicit: str | None) -> tuple[list[dict], dict]:
     exe = "dotnet.exe" if is_windows() else "dotnet"
     if explicit:
-        return [{"path": os.path.abspath(explicit), "source": "explicit"}], {"explicit": True}
+        return [{"path": os.path.abspath(explicit), "source": "explicit"}], {
+            "explicit": True
+        }
     on_path, skipped = path_candidates([exe])
-    cands = dedupe([(p, "path") for p in on_path] + [(p, "known") for p in known_dotnet_locations()])
+    cands = dedupe(
+        [(p, "path") for p in on_path]
+        + [(p, "known") for p in known_dotnet_locations()]
+    )
     for rank, c in enumerate(cands):
         c["path_rank"] = rank
-    return cands, {"explicit": False, "path_entries_ignored": skipped,
-                   "searched": ["PATH", "DOTNET_ROOT*", "known install locations"]}
+    return cands, {
+        "explicit": False,
+        "path_entries_ignored": skipped,
+        "searched": ["PATH", "DOTNET_ROOT*", "known install locations"],
+    }
 
 
 def parse_sdks(text: str) -> list[dict]:
@@ -55,20 +67,36 @@ def query(path: str, timeout: float, max_bytes: int) -> dict:
     """1 つの dotnet について SDK / runtime / アーキテクチャを問い合わせる。"""
     cwd = tempfile.gettempdir()
     info: dict = {"path": path, "errors": []}
-    for key, args in (("sdks", ["--list-sdks"]), ("runtimes", ["--list-runtimes"]),
-                      ("info", ["--info"])):
-        res = runner.run([path, *args], timeout=timeout, max_output_bytes=max_bytes, cwd=cwd,
-                         env=dotnet_env())
+    for key, args in (
+        ("sdks", ["--list-sdks"]),
+        ("runtimes", ["--list-runtimes"]),
+        ("info", ["--info"]),
+    ):
+        res = runner.run(
+            [path, *args],
+            timeout=timeout,
+            max_output_bytes=max_bytes,
+            cwd=cwd,
+            env=dotnet_env(),
+        )
         if res.reason_code or res.exit_code != 0:
-            info["errors"].append({"query": key, "reason_code": res.reason_code or "NONZERO_EXIT",
-                                   "exit_code": res.exit_code})
+            info["errors"].append(
+                {
+                    "query": key,
+                    "reason_code": res.reason_code or "NONZERO_EXIT",
+                    "exit_code": res.exit_code,
+                }
+            )
             continue
         text = res.text()
         if key == "sdks":
             info["sdks"] = parse_sdks(text)
             for sdk in info["sdks"]:
-                sdk["has_csc"] = os.path.isfile(os.path.join(
-                    sdk["path"], sdk["version"], "Roslyn", "bincore", "csc.dll"))
+                sdk["has_csc"] = os.path.isfile(
+                    os.path.join(
+                        sdk["path"], sdk["version"], "Roslyn", "bincore", "csc.dll"
+                    )
+                )
         elif key == "runtimes":
             info["runtimes"] = parse_runtimes(text)
         else:
@@ -81,13 +109,24 @@ def query(path: str, timeout: float, max_bytes: int) -> dict:
 
 def select_sdk(path: str, workdir: str, timeout: float, max_bytes: int) -> dict:
     """作業ディレクトリで実際に選択される SDK（global.json を反映）。"""
-    res = runner.run([path, "--version"], timeout=timeout, max_output_bytes=max_bytes, cwd=workdir,
-                     env=dotnet_env())
+    res = runner.run(
+        [path, "--version"],
+        timeout=timeout,
+        max_output_bytes=max_bytes,
+        cwd=workdir,
+        env=dotnet_env(),
+    )
     if res.reason_code:
         return {"selected": None, "reason_code": res.reason_code}
     if res.exit_code != 0:
-        return {"selected": None, "reason_code": "SDK_NOT_RESOLVED", "exit_code": res.exit_code}
-    return {"selected": res.text().strip().splitlines()[0] if res.text().strip() else None}
+        return {
+            "selected": None,
+            "reason_code": "SDK_NOT_RESOLVED",
+            "exit_code": res.exit_code,
+        }
+    return {
+        "selected": res.text().strip().splitlines()[0] if res.text().strip() else None
+    }
 
 
 def tfm_major(tfm: str) -> int | None:
@@ -104,9 +143,19 @@ def sdk_major(version: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
-NETFX_RELEASES = ((533320, "4.8.1"), (528040, "4.8"), (461808, "4.7.2"), (461308, "4.7.1"),
-                  (460798, "4.7"), (394802, "4.6.2"), (394254, "4.6.1"), (393295, "4.6"),
-                  (379893, "4.5.2"), (378675, "4.5.1"), (378389, "4.5"))
+NETFX_RELEASES = (
+    (533320, "4.8.1"),
+    (528040, "4.8"),
+    (461808, "4.7.2"),
+    (461308, "4.7.1"),
+    (460798, "4.7"),
+    (394802, "4.6.2"),
+    (394254, "4.6.1"),
+    (393295, "4.6"),
+    (379893, "4.5.2"),
+    (378675, "4.5.1"),
+    (378389, "4.5"),
+)
 
 
 def netfx_version(release: int | None) -> str | None:
@@ -119,8 +168,10 @@ def netfx_version(release: int | None) -> str | None:
 def framework_compilers() -> list[str]:
     """Framework ディレクトリ内の csc.exe。SDK 内のコンパイラーとは別物。"""
     win = os.environ.get("SystemRoot", r"C:\Windows")
-    cands = [os.path.join(win, "Microsoft.NET", d, "v4.0.30319", "csc.exe")
-             for d in ("Framework64", "Framework")]
+    cands = [
+        os.path.join(win, "Microsoft.NET", d, "v4.0.30319", "csc.exe")
+        for d in ("Framework64", "Framework")
+    ]
     return [c for c in cands if os.path.isfile(c)]
 
 
@@ -131,18 +182,36 @@ def netframework_installs() -> dict | None:
     import winreg  # type: ignore[import-not-found]
 
     out: dict = {"views": {}}
-    for label, flag in (("x64", winreg.KEY_WOW64_64KEY), ("x86", winreg.KEY_WOW64_32KEY)):
+    for label, flag in (
+        ("x64", winreg.KEY_WOW64_64KEY),
+        ("x86", winreg.KEY_WOW64_32KEY),
+    ):
         try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                                r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full",
-                                0, winreg.KEY_READ | flag) as k:
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full",
+                0,
+                winreg.KEY_READ | flag,
+            ) as k:
                 release, _ = winreg.QueryValueEx(k, "Release")
-                out["views"][label] = {"release": int(release), "version": netfx_version(int(release))}
+                out["views"][label] = {
+                    "release": int(release),
+                    "version": netfx_version(int(release)),
+                }
         except OSError as e:
-            out["views"][label] = {"release": None, "reason_code": "ACCESS_DENIED"
-                                   if isinstance(e, PermissionError) else "NOT_FOUND"}
-    base = os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
-                        "Reference Assemblies", "Microsoft", "Framework", ".NETFramework")
+            out["views"][label] = {
+                "release": None,
+                "reason_code": "ACCESS_DENIED"
+                if isinstance(e, PermissionError)
+                else "NOT_FOUND",
+            }
+    base = os.path.join(
+        os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+        "Reference Assemblies",
+        "Microsoft",
+        "Framework",
+        ".NETFramework",
+    )
     out["compilers"] = framework_compilers()
     out["reference_assemblies_dir"] = base
     out["targeting_packs"] = sorted(os.listdir(base)) if os.path.isdir(base) else []

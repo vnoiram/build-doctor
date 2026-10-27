@@ -18,7 +18,9 @@ def scan_requires(text: str) -> dict:
         elif low.startswith("-psedition"):
             out["editions"] += [x.strip() for x in rest.split(None, 1)[1].split(",")]
         elif low.startswith("-modules"):
-            out["modules"] += [x.strip().strip("'\"") for x in rest.split(None, 1)[1].split(",")]
+            out["modules"] += [
+                x.strip().strip("'\"") for x in rest.split(None, 1)[1].split(",")
+            ]
         elif low.startswith("-runasadministrator"):
             out["admin"] = True
     return out
@@ -31,11 +33,15 @@ def version_tuple(v: str | None) -> tuple[int, ...] | None:
     return tuple(int(x) for x in m.group(1).split(".")) if m else None
 
 
-_DLLIMPORT = re.compile(r'\[\s*(?:System\.Runtime\.InteropServices\.)?DllImport\s*\(\s*"(?P<lib>[^"]+)"')
+_DLLIMPORT = re.compile(
+    r'\[\s*(?:System\.Runtime\.InteropServices\.)?DllImport\s*\(\s*"(?P<lib>[^"]+)"'
+)
 _USING = re.compile(r"^\s*using\s+(?P<ns>[\w.]+)\s*;", re.MULTILINE)
 
 
 def scan_csharp_literal(code: str) -> dict:
     """Add-Type の静的な C# リテラルから DllImport 先と using だけを抽出する(コンパイルはしない)。"""
-    return {"dll_imports": sorted(set(_DLLIMPORT.findall(code))),
-            "usings": sorted(set(_USING.findall(code)))}
+    return {
+        "dll_imports": sorted(set(_DLLIMPORT.findall(code))),
+        "usings": sorted(set(_USING.findall(code))),
+    }

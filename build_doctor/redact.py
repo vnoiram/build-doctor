@@ -7,12 +7,16 @@ import re
 from typing import Any
 
 _URL_CRED = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@")
-_URL_QUERY = re.compile(r"(?P<url>[A-Za-z][A-Za-z0-9+.-]*://[^\s?#\"'<>]+)\?[^\s\"'<>]*")
+_URL_QUERY = re.compile(
+    r"(?P<url>[A-Za-z][A-Za-z0-9+.-]*://[^\s?#\"'<>]+)\?[^\s\"'<>]*"
+)
 _SECRETS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"),
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    re.compile(r"(?i)\b(password|passwd|pwd|token|secret|api[_-]?key|apikey)(\s*[=:]\s*)\S+"),
+    re.compile(
+        r"(?i)\b(password|passwd|pwd|token|secret|api[_-]?key|apikey)(\s*[=:]\s*)\S+"
+    ),
 ]
 
 
@@ -60,8 +64,10 @@ class Redactor:
         root = root.rstrip("/\\")
         if not root:
             return s
-        pattern = re.compile(re.escape(root) + r"(?=$|[\\/\s\"'\]\),;:])",
-                             re.IGNORECASE if os.name == "nt" else 0)
+        pattern = re.compile(
+            re.escape(root) + r"(?=$|[\\/\s\"'\]\),;:])",
+            re.IGNORECASE if os.name == "nt" else 0,
+        )
         return pattern.sub(ph, s)
 
     def apply(self, obj: Any) -> Any:

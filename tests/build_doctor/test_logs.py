@@ -26,12 +26,16 @@ def test_tool_prefix_and_no_code():
 
 
 def test_japanese_message_is_classified_by_code():
-    d = classify_line("Program.cs(3,1): error CS0246: 型または名前空間の名前 'Foo' が見つかりませんでした")
+    d = classify_line(
+        "Program.cs(3,1): error CS0246: 型または名前空間の名前 'Foo' が見つかりませんでした"
+    )
     assert d.code == "CS0246"
 
 
 def test_exception_names_are_language_independent():
-    d = classify_line("System.BadImageFormatException: 形式が正しくないプログラムを読み込もうとしました。")
+    d = classify_line(
+        "System.BadImageFormatException: 形式が正しくないプログラムを読み込もうとしました。"
+    )
     assert d.code == "LOAD:BadImageFormatException"
 
 

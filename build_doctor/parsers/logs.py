@@ -4,25 +4,35 @@ from __future__ import annotations
 
 import codecs
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
 
 from . import FormatError
 
-_PROJ = re.compile(r"\s*\[(?P<proj>[^\[\]]+\.(?:csproj|vbproj|fsproj|sln|proj|props|targets))\]\s*$",
-                   re.IGNORECASE)
+_PROJ = re.compile(
+    r"\s*\[(?P<proj>[^\[\]]+\.(?:csproj|vbproj|fsproj|sln|proj|props|targets))\]\s*$",
+    re.IGNORECASE,
+)
 _LOC = re.compile(
     r"^\s*(?P<file>.+?)\((?P<line>\d+)(?:,(?P<col>\d+))?(?:,\d+,\d+)?\)\s*:\s*"
-    r"(?:[\w ]+? )?(?P<sev>error|warning)\s+(?P<code>[A-Za-z][A-Za-z0-9]*\d)?\s*:\s*(?P<msg>.*)$")
+    r"(?:[\w ]+? )?(?P<sev>error|warning)\s+(?P<code>[A-Za-z][A-Za-z0-9]*\d)?\s*:\s*(?P<msg>.*)$"
+)
 _TOOL = re.compile(
     r"^\s*(?P<file>(?:[A-Za-z]:)?[^:]*?)\s*:\s*(?:[\w ]+? )?(?P<sev>error|warning)\s+"
-    r"(?P<code>[A-Za-z][A-Za-z0-9]*\d)?\s*:\s*(?P<msg>.*)$")
-_EXC = re.compile(r"\b(?P<exc>(?:System\.(?:IO\.)?)?(?:BadImageFormatException|FileNotFoundException|"
-                  r"FileLoadException|DllNotFoundException))\b")
+    r"(?P<code>[A-Za-z][A-Za-z0-9]*\d)?\s*:\s*(?P<msg>.*)$"
+)
+_EXC = re.compile(
+    r"\b(?P<exc>(?:System\.(?:IO\.)?)?(?:BadImageFormatException|FileNotFoundException|"
+    r"FileLoadException|DllNotFoundException))\b"
+)
 _PSERR = re.compile(r"\b(ParseException|ParserError)\b")
 
-LOG_ENCODING_BOMS = ((codecs.BOM_UTF8, "utf-8-sig"), (codecs.BOM_UTF16_LE, "utf-16"),
-                     (codecs.BOM_UTF16_BE, "utf-16"))
+LOG_ENCODING_BOMS = (
+    (codecs.BOM_UTF8, "utf-8-sig"),
+    (codecs.BOM_UTF16_LE, "utf-16"),
+    (codecs.BOM_UTF16_BE, "utf-16"),
+)
 
 
 @dataclass
@@ -37,8 +47,15 @@ class Diagnostic:
     count: int = 1
 
     def key(self) -> tuple:
-        return (self.severity, self.code, self.file, self.line, self.column, self.project,
-                self.message)
+        return (
+            self.severity,
+            self.code,
+            self.file,
+            self.line,
+            self.column,
+            self.project,
+            self.message,
+        )
 
     @property
     def class_code(self) -> str:
@@ -51,12 +68,16 @@ def classify_line(line: str) -> Diagnostic | None:
     m = _PROJ.search(text)
     if m:
         project = m.group("proj")
-        text = text[:m.start()]
+        text = text[: m.start()]
     for pat in (_LOC, _TOOL):
         m = pat.match(text)
         if m:
-            d = Diagnostic(severity=m.group("sev"), code=m.group("code"),
-                           message=m.group("msg").strip(), project=project)
+            d = Diagnostic(
+                severity=m.group("sev"),
+                code=m.group("code"),
+                message=m.group("msg").strip(),
+                project=project,
+            )
             file = m.group("file").strip()
             d.file = file or None
             if pat is _LOC:
@@ -65,11 +86,17 @@ def classify_line(line: str) -> Diagnostic | None:
             return d
     m = _EXC.search(text)
     if m:
-        return Diagnostic("error", "LOAD:" + m.group("exc").split(".")[-1], text.strip()[:300],
-                          project=project)
+        return Diagnostic(
+            "error",
+            "LOAD:" + m.group("exc").split(".")[-1],
+            text.strip()[:300],
+            project=project,
+        )
     m = _PSERR.search(text)
     if m:
-        return Diagnostic("error", "PS:ParseException", text.strip()[:300], project=project)
+        return Diagnostic(
+            "error", "PS:ParseException", text.strip()[:300], project=project
+        )
     return None
 
 
@@ -78,7 +105,9 @@ def detect_encoding(head: bytes, override: str | None) -> str:
         try:
             codecs.lookup(override)
         except LookupError:
-            raise FormatError("UNSUPPORTED_FORMAT", f"未知のエンコーディング: {override}")
+            raise FormatError(
+                "UNSUPPORTED_FORMAT", f"未知のエンコーディング: {override}"
+            )
         return override
     for bom, enc in LOG_ENCODING_BOMS:
         if head.startswith(bom):
@@ -86,8 +115,9 @@ def detect_encoding(head: bytes, override: str | None) -> str:
     return "utf-8"
 
 
-def iter_lines(stream: BinaryIO, max_bytes: int, encoding: str | None = None
-               ) -> Iterator[tuple[str, bool]]:
+def iter_lines(
+    stream: BinaryIO, max_bytes: int, encoding: str | None = None
+) -> Iterator[tuple[str, bool]]:
     """(行, 打ち切りか) を返す。復号失敗は黙って置換せず FormatError にする。"""
     first = stream.read(65536)
     enc = detect_encoding(first, encoding)
@@ -96,15 +126,17 @@ def iter_lines(stream: BinaryIO, max_bytes: int, encoding: str | None = None
     while True:
         truncated = False
         if consumed + len(chunk) > max_bytes:
-            chunk = chunk[:max(max_bytes - consumed, 0)]
+            chunk = chunk[: max(max_bytes - consumed, 0)]
             truncated = True
         consumed += len(chunk)
         try:
             pending += decoder.decode(chunk, final=not chunk)
         except UnicodeDecodeError as e:
-            raise FormatError("DECODE_ERROR",
-                              f"{enc} として復号できない (byte {consumed - len(chunk) + e.start})。"
-                              "--input-encoding を指定してください")
+            raise FormatError(
+                "DECODE_ERROR",
+                f"{enc} として復号できない (byte {consumed - len(chunk) + e.start})。"
+                "--input-encoding を指定してください",
+            )
         *lines, pending = pending.split("\n")
         for ln in lines:
             yield ln, False
@@ -117,8 +149,9 @@ def iter_lines(stream: BinaryIO, max_bytes: int, encoding: str | None = None
         yield "", True
 
 
-def parse_log(stream: BinaryIO, max_bytes: int, encoding: str | None = None
-              ) -> tuple[list[Diagnostic], bool]:
+def parse_log(
+    stream: BinaryIO, max_bytes: int, encoding: str | None = None
+) -> tuple[list[Diagnostic], bool]:
     """重複を集約した診断一覧と、入力が上限で打ち切られたかを返す。"""
     seen: dict[tuple, Diagnostic] = {}
     truncated = False

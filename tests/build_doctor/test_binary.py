@@ -33,7 +33,9 @@ def test_mixed_mode_x86():
 def test_x64_managed_and_native():
     assert parse(make_pe(0x8664, pe32plus=True, clr_flags=0x1))["arch"] == "x64"
     native = parse(make_pe(0x8664, pe32plus=True))
-    assert native["arch"] == "x64" and native["kind"] == "native" and not native["managed"]
+    assert (
+        native["arch"] == "x64" and native["kind"] == "native" and not native["managed"]
+    )
 
 
 def test_arm64_native():
@@ -46,13 +48,16 @@ def test_elf():
     assert parse(make_elf(183))["arch"] == "arm64"
 
 
-@pytest.mark.parametrize("data,code", [
-    (b"", "UNSUPPORTED_FORMAT"),
-    (b"hello world, not a binary", "UNSUPPORTED_FORMAT"),
-    (b"MZ" + b"\0" * 10, "UNSUPPORTED_FORMAT"),
-    (make_pe(clr_flags=1)[:100], "CORRUPT"),
-    (make_pe(clr_flags=1, bad_rva=True), "CORRUPT"),
-])
+@pytest.mark.parametrize(
+    "data,code",
+    [
+        (b"", "UNSUPPORTED_FORMAT"),
+        (b"hello world, not a binary", "UNSUPPORTED_FORMAT"),
+        (b"MZ" + b"\0" * 10, "UNSUPPORTED_FORMAT"),
+        (make_pe(clr_flags=1)[:100], "CORRUPT"),
+        (make_pe(clr_flags=1, bad_rva=True), "CORRUPT"),
+    ],
+)
 def test_broken_inputs_do_not_crash(data, code):
     with pytest.raises(FormatError) as e:
         parse(data)

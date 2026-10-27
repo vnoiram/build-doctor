@@ -4,10 +4,19 @@ import sys
 import sysconfig
 
 ARCH_ALIASES = {
-    "x86_64": "x64", "amd64": "x64", "x64": "x64",
-    "i386": "x86", "i486": "x86", "i586": "x86", "i686": "x86", "x86": "x86",
-    "aarch64": "arm64", "arm64": "arm64",
-    "armv7l": "arm", "armv8l": "arm", "arm": "arm",
+    "x86_64": "x64",
+    "amd64": "x64",
+    "x64": "x64",
+    "i386": "x86",
+    "i486": "x86",
+    "i586": "x86",
+    "i686": "x86",
+    "x86": "x86",
+    "aarch64": "arm64",
+    "arm64": "arm64",
+    "armv7l": "arm",
+    "armv8l": "arm",
+    "arm": "arm",
 }
 
 

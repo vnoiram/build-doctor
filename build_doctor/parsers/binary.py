@@ -7,8 +7,14 @@ from typing import BinaryIO
 
 from . import FormatError
 
-PE_MACHINES = {0x14C: "x86", 0x8664: "x64", 0xAA64: "arm64", 0x1C0: "arm", 0x1C4: "arm",
-               0x200: "ia64"}
+PE_MACHINES = {
+    0x14C: "x86",
+    0x8664: "x64",
+    0xAA64: "arm64",
+    0x1C0: "arm",
+    0x1C4: "arm",
+    0x200: "ia64",
+}
 ELF_MACHINES = {3: "x86", 62: "x64", 183: "arm64", 40: "arm", 243: "riscv"}
 ELF_TYPES = {1: "relocatable", 2: "executable", 3: "shared", 4: "core"}
 
@@ -27,7 +33,10 @@ class _Reader:
 
     def read(self, off: int, n: int) -> bytes:
         if off < 0 or n < 0 or off + n > self.size:
-            raise FormatError("CORRUPT", f"範囲外の読み取り (offset={off}, size={n}, file={self.size})")
+            raise FormatError(
+                "CORRUPT",
+                f"範囲外の読み取り (offset={off}, size={n}, file={self.size})",
+            )
         self.f.seek(off)
         data = self.f.read(n)
         if len(data) != n:
@@ -77,7 +86,9 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
     elif magic == 0x20B:
         pe_format, dd_off, count_off = "PE32+", 112, 108
     else:
-        raise FormatError("UNSUPPORTED_FORMAT", f"未対応のオプションヘッダー magic=0x{magic:x}")
+        raise FormatError(
+            "UNSUPPORTED_FORMAT", f"未対応のオプションヘッダー magic=0x{magic:x}"
+        )
     subsystem = r.u16(opt + 68)
 
     sections = []
@@ -121,9 +132,14 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
 
     machine = PE_MACHINES.get(machine_raw, f"other(0x{machine_raw:x})")
     result = {
-        "format": "PE", "pe_format": pe_format, "machine": machine,
-        "machine_raw": f"0x{machine_raw:x}", "is_dll": bool(characteristics & 0x2000),
-        "subsystem": subsystem, "managed": clr is not None, "clr": clr,
+        "format": "PE",
+        "pe_format": pe_format,
+        "machine": machine,
+        "machine_raw": f"0x{machine_raw:x}",
+        "is_dll": bool(characteristics & 0x2000),
+        "subsystem": subsystem,
+        "managed": clr is not None,
+        "clr": clr,
     }
     result.update(_classify_pe(machine, clr))
     return result
@@ -134,9 +150,7 @@ def _classify_pe(machine: str, clr: dict | None) -> dict:
     if clr is None:
         return {"arch": machine, "kind": "native", "mixed_mode": False}
     if machine == "x86":
-        if clr["requires_32bit"]:
-            arch = "x86"
-        elif not clr["ilonly"]:
+        if clr["requires_32bit"] or not clr["ilonly"]:
             arch = "x86"
         elif clr["prefers_32bit"]:
             arch = "anycpu-prefer32"
@@ -158,10 +172,15 @@ def parse_elf(f: BinaryIO, size: int) -> dict:
     e_type, e_machine = struct.unpack(endian + "HH", r.read(16, 4))
     machine = ELF_MACHINES.get(e_machine, f"other({e_machine})")
     return {
-        "format": "ELF", "elf_class": 32 if ei_class == 1 else 64,
+        "format": "ELF",
+        "elf_class": 32 if ei_class == 1 else 64,
         "endian": "little" if ei_data == 1 else "big",
-        "type": ELF_TYPES.get(e_type, f"other({e_type})"), "machine": machine,
-        "arch": machine, "kind": "native", "managed": False, "mixed_mode": False,
+        "type": ELF_TYPES.get(e_type, f"other({e_type})"),
+        "machine": machine,
+        "arch": machine,
+        "kind": "native",
+        "managed": False,
+        "mixed_mode": False,
     }
 
 

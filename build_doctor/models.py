@@ -21,7 +21,7 @@ EXIT_INTERRUPTED = 130
 
 
 def now_utc() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class Report:
@@ -32,18 +32,41 @@ class Report:
         self.checks: list[dict] = []
         self.facts: list[dict] = []
         self.records: list[dict] = []
-        self.execution: dict[str, Any] = {"build_started": False, "child_exit_code": None}
+        self.execution: dict[str, Any] = {
+            "build_started": False,
+            "child_exit_code": None,
+        }
         self.build_failed = False
 
-    def add_fact(self, source: str, value: Any, *, location: str | None = None,
-                 complete: bool = True) -> str:
+    def add_fact(
+        self,
+        source: str,
+        value: Any,
+        *,
+        location: str | None = None,
+        complete: bool = True,
+    ) -> str:
         fid = f"fact-{len(self.facts) + 1}"
-        self.facts.append({"id": fid, "source": source, "value": value, "location": location,
-                           "time_utc": now_utc(), "complete": complete})
+        self.facts.append(
+            {
+                "id": fid,
+                "source": source,
+                "value": value,
+                "location": location,
+                "time_utc": now_utc(),
+                "complete": complete,
+            }
+        )
         return fid
 
-    def add_check(self, check_id: str, outcome: str, *, reason_code: str | None = None,
-                  detail: str | None = None) -> None:
+    def add_check(
+        self,
+        check_id: str,
+        outcome: str,
+        *,
+        reason_code: str | None = None,
+        detail: str | None = None,
+    ) -> None:
         assert outcome in OUTCOMES, outcome
         entry: dict[str, Any] = {"id": check_id, "outcome": outcome}
         if reason_code:
@@ -52,17 +75,36 @@ class Report:
             entry["detail"] = detail
         self.checks.append(entry)
 
-    def add_finding(self, rule_id: str, status: str, severity: str, title: str, *,
-                    evidence: list[str] | tuple = (), meaning: str, limit: str,
-                    next_steps: list[str] | tuple = (), related: list[str] | tuple = ()) -> str:
+    def add_finding(
+        self,
+        rule_id: str,
+        status: str,
+        severity: str,
+        title: str,
+        *,
+        evidence: list[str] | tuple = (),
+        meaning: str,
+        limit: str,
+        next_steps: list[str] | tuple = (),
+        related: list[str] | tuple = (),
+    ) -> str:
         assert status in STATUSES and severity in SEVERITIES
         assert rule_id in RULES, f"未登録の Rule ID: {rule_id}"
         fid = f"finding-{len(self.records) + 1}"
-        self.records.append({
-            "id": fid, "rule_id": rule_id, "status": status, "severity": severity,
-            "title": title, "evidence_refs": list(evidence), "meaning": meaning,
-            "limit": limit, "next": list(next_steps), "related_findings": list(related),
-        })
+        self.records.append(
+            {
+                "id": fid,
+                "rule_id": rule_id,
+                "status": status,
+                "severity": severity,
+                "title": title,
+                "evidence_refs": list(evidence),
+                "meaning": meaning,
+                "limit": limit,
+                "next": list(next_steps),
+                "related_findings": list(related),
+            }
+        )
         return fid
 
     def link(self, a: str, b: str) -> None:

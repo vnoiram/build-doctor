@@ -19,7 +19,9 @@ def render(data: dict, *, use_color: bool = False, verbose: bool = False) -> str
     if data.get("target"):
         add(f"対象: {data['target']}")
     cov = data["coverage"]
-    add(f"検査: 完了 {cov['completed']} / 不明 {cov['unknown']} / 省略 {cov['skipped']}")
+    add(
+        f"検査: 完了 {cov['completed']} / 不明 {cov['unknown']} / 省略 {cov['skipped']}"
+    )
     s = data["summary"]
     add(f"所見: error {s['error']} / warning {s['warning']} / info {s['info']}")
     ex = data["execution"]
@@ -64,8 +66,10 @@ def render(data: dict, *, use_color: bool = False, verbose: bool = False) -> str
         add("取得した事実:")
         for f in data["facts"]:
             loc = f" @ {f['location']}" if f.get("location") else ""
-            add(f"  - {f['id']} [{f['source']}]{loc} "
-                f"{json.dumps(f['value'], ensure_ascii=False, separators=(',', ':'))[:400]}")
+            add(
+                f"  - {f['id']} [{f['source']}]{loc} "
+                f"{json.dumps(f['value'], ensure_ascii=False, separators=(',', ':'))[:400]}"
+            )
         add("")
 
     if not data["records"] and not incomplete:

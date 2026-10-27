@@ -15,8 +15,11 @@ def test_missing_tool():
 
 
 def test_captures_output_and_exit_code():
-    res = runner.run([sys.executable, "-c", "import sys;print('hi');sys.exit(3)"],
-                     timeout=20, max_output_bytes=1000)
+    res = runner.run(
+        [sys.executable, "-c", "import sys;print('hi');sys.exit(3)"],
+        timeout=20,
+        max_output_bytes=1000,
+    )
     assert res.exit_code == 3 and res.text().strip() == "hi" and not res.killed
 
 
@@ -47,13 +50,20 @@ def test_grandchild_is_killed(tmp_path):
 @posix_only
 def test_no_orphan_after_normal_exit(tmp_path):
     marker = tmp_path / "alive"
-    runner.run(["/bin/sh", "-c", f"(sleep 2; touch {marker}) >/dev/null 2>&1 &\nexit 0"],
-               timeout=10, max_output_bytes=1000)
+    runner.run(
+        ["/bin/sh", "-c", f"(sleep 2; touch {marker}) >/dev/null 2>&1 &\nexit 0"],
+        timeout=10,
+        max_output_bytes=1000,
+    )
     time.sleep(3)
     assert not marker.exists()
 
 
 def test_stdin_data():
-    res = runner.run([sys.executable, "-c", "import sys;print(sys.stdin.read().upper())"],
-                     timeout=20, max_output_bytes=1000, stdin_data=b"abc")
+    res = runner.run(
+        [sys.executable, "-c", "import sys;print(sys.stdin.read().upper())"],
+        timeout=20,
+        max_output_bytes=1000,
+        stdin_data=b"abc",
+    )
     assert res.text().strip() == "ABC"

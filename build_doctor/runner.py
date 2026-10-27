@@ -8,7 +8,7 @@ import signal
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -19,7 +19,9 @@ class RunResult:
     stderr: bytes = b""
     timed_out: bool = False
     output_exceeded: bool = False
-    reason_code: str | None = None  # TOOL_MISSING / ACCESS_DENIED / TIMEOUT / OUTPUT_LIMIT / EXEC_FAILED
+    reason_code: str | None = (
+        None  # TOOL_MISSING / ACCESS_DENIED / TIMEOUT / OUTPUT_LIMIT / EXEC_FAILED
+    )
     detail: str | None = None
     killed: bool = False
 
@@ -43,6 +45,7 @@ def _create_job():
     try:
         import ctypes
         from ctypes import wintypes
+
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         k32.CreateJobObjectW.restype = wintypes.HANDLE
         k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
@@ -51,23 +54,36 @@ def _create_job():
             return None
 
         class BasicLimit(ctypes.Structure):
-            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
-                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
-                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
-                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
-                        ("SchedulingClass", wintypes.DWORD)]
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
 
         class IoCounters(ctypes.Structure):
             _fields_ = [(n, ctypes.c_uint64) for n in ("a", "b", "c", "d", "e", "f")]
 
         class ExtLimit(ctypes.Structure):
-            _fields_ = [("Basic", BasicLimit), ("Io", IoCounters), ("ProcessMemoryLimit", ctypes.c_size_t),
-                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
-                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+            _fields_ = [
+                ("Basic", BasicLimit),
+                ("Io", IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
 
         info = ExtLimit()
         info.Basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-        ok = k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))
+        ok = k32.SetInformationJobObject(
+            job, 9, ctypes.byref(info), ctypes.sizeof(info)
+        )
         return [k32, job] if ok else None
     except (OSError, AttributeError, ImportError):
         return None
@@ -97,8 +113,12 @@ def _kill_tree(proc: subprocess.Popen, job=None) -> None:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
         else:
-            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            subprocess.run(  # noqa: PLW1510
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
     except (ProcessLookupError, PermissionError, OSError, subprocess.SubprocessError):
         pass
     try:
@@ -107,18 +127,31 @@ def _kill_tree(proc: subprocess.Popen, job=None) -> None:
         pass
 
 
-def run(argv: list[str], *, timeout: float, max_output_bytes: int, cwd: str | None = None,
-        stdin_data: bytes | None = None, env: dict[str, str] | None = None) -> RunResult:
+def run(
+    argv: list[str],
+    *,
+    timeout: float,
+    max_output_bytes: int,
+    cwd: str | None = None,
+    stdin_data: bytes | None = None,
+    env: dict[str, str] | None = None,
+) -> RunResult:
     """argv 配列で起動する（シェルは使わない）。"""
     result = RunResult(argv=list(argv))
-    kwargs: dict = dict(stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd, env=env,
-                        shell=False)
+    kwargs: dict = {
+        "stdin": subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "cwd": cwd,
+        "env": env,
+        "shell": False,
+    }
     if os.name == "posix":
         kwargs["start_new_session"] = True
     else:
-        kwargs["creationflags"] = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                                   | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        kwargs["creationflags"] = getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        ) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
     job = None
     try:
         proc = subprocess.Popen(argv, **kwargs)
@@ -149,7 +182,7 @@ def run(argv: list[str], *, timeout: float, max_output_bytes: int, cwd: str | No
                     return
                 room = max_output_bytes - len(buf)
                 if len(chunk) > room:
-                    buf += chunk[:max(room, 0)]
+                    buf += chunk[: max(room, 0)]
                     exceeded.set()
                     return
                 buf += chunk
@@ -163,8 +196,10 @@ def run(argv: list[str], *, timeout: float, max_output_bytes: int, cwd: str | No
         except (OSError, ValueError):
             pass
 
-    threads = [threading.Thread(target=reader, args=("stdout", proc.stdout), daemon=True),
-               threading.Thread(target=reader, args=("stderr", proc.stderr), daemon=True)]
+    threads = [
+        threading.Thread(target=reader, args=("stdout", proc.stdout), daemon=True),
+        threading.Thread(target=reader, args=("stderr", proc.stderr), daemon=True),
+    ]
     if stdin_data is not None:
         threads.append(threading.Thread(target=writer, daemon=True))
     for t in threads:
