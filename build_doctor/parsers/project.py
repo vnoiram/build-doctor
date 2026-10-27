@@ -26,7 +26,9 @@ WATCHED = (
     "EnableWindowsTargeting",
     "OutputType",
     "SelfContained",
+    "RestoreSources",
 )
+URL_PROPS = {"RestoreSources"}
 MAX_UPWARD = 16
 KNOWN_GLOBAL_TOP = {"sdk", "tools", "msbuild-sdks", "test"}
 KNOWN_GLOBAL_SDK = {
@@ -77,6 +79,8 @@ def _collect_properties(root: ET.Element, source: str) -> dict[str, list[dict]]:
             if name not in WATCHED:
                 continue
             value = (el.text or "").strip()
+            if name in URL_PROPS:
+                value = ";".join(sanitize_url(v) for v in value.split(";") if v.strip())
             cond = el.get("Condition") or group.get("Condition")
             props.setdefault(name, []).append(
                 {

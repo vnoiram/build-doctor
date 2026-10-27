@@ -149,3 +149,18 @@ def test_assets_match(tmp_path):
         )
     )
     assert assets_matches(a2, ["net472"], []) == ([], [])
+
+
+def test_restore_sources_credentials_are_redacted(tmp_path):
+    p = write(
+        tmp_path / "App.csproj",
+        SDK_CSPROJ.format(
+            tfm="net8.0",
+            extra="<RestoreSources>https://u:pw@example.com/i.json?token=abc;"
+            "https://api.nuget.org/v3/index.json</RestoreSources>",
+        ),
+    )
+    info = parse_project(str(p))
+    value = info["properties"]["RestoreSources"][0]["value"]
+    assert "pw" not in value and "token=abc" not in value
+    assert "api.nuget.org" in value

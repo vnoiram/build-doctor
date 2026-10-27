@@ -336,6 +336,12 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
     nuget = proj.parse_nuget_sources(project_dir)
     if nuget:
         r.add_fact("nuget-sources", nuget, location=nuget["path"])
+    if "RestoreSources" in p["properties"]:
+        r.add_fact(
+            "restore-sources",
+            {"definitions": p["properties"]["RestoreSources"]},
+            location=rel,
+        )
 
     # global.json
     gj, gj_fact = None, None

@@ -10,3 +10,4 @@ dist/
 ai-design/
 *.log
 .serena/*
+.pre-push-check-ignore.md
