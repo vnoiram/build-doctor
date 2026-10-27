@@ -25,6 +25,15 @@ python3 build_doctor.py build ./src/App.csproj [--restore]     # 明示的な実
 主な共通オプション: `--format text|json`、`--output FILE`（既存ファイルは上書きしない）、`--static-only`（外部ツールを起動しない）、
 `--fail-on warning|error`、`--timeout`、`--max-output-bytes`、`--dotnet-path` / `--powershell-path` / `--msbuild-path`、`--show-paths`。
 
+## 単一ファイル配布
+
+```bash
+python3 scripts/build_zipapp.py [出力先]   # 既定: dist/build-doctor.pyz
+python3 dist/build-doctor.pyz env
+```
+
+Python 3.11 以降が必要です（Python 同梱の配布は含みません）。
+
 ## 終了コード
 
 | コード | 意味 |

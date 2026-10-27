@@ -67,3 +67,21 @@ def test_stdin_data():
         stdin_data=b"abc",
     )
     assert res.text().strip() == "ABC"
+
+
+def test_zipapp_builds_and_starts(tmp_path):
+    import subprocess
+    import sys
+
+    from helpers import ROOT
+
+    out = tmp_path / "bd.pyz"
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_zipapp.py"), str(out)],
+        check=True,
+        capture_output=True,
+    )
+    res = subprocess.run(
+        [sys.executable, str(out), "--version"], capture_output=True, text=True
+    )
+    assert res.returncode == 0 and "build-doctor" in res.stdout

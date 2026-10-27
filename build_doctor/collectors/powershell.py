@@ -6,13 +6,16 @@ import base64
 import json
 import os
 import tempfile
-from pathlib import Path
+from importlib import resources
 
 from .. import runner
 from . import is_windows
 from .tools import dedupe, known_powershell_locations, path_candidates
 
-HELPER = Path(__file__).resolve().parent.parent / "helpers" / "inspect_ps.ps1"
+HELPER_RESOURCE = (
+    "helpers",
+    "inspect_ps.ps1",
+)  # zipapp 内でも読めるよう resources 経由
 MAX_ENCODED_COMMAND = 30000  # Windows のコマンドライン上限を考慮
 
 
@@ -27,8 +30,12 @@ def discover(explicit: str | None) -> list[dict]:
     )
 
 
+def helper_source() -> str:
+    return resources.files("build_doctor").joinpath(*HELPER_RESOURCE).read_text("utf-8")
+
+
 def _encoded_helper() -> str:
-    src = HELPER.read_text(encoding="utf-8")
+    src = helper_source()
     enc = base64.b64encode(src.encode("utf-16-le")).decode("ascii")
     if len(enc) > MAX_ENCODED_COMMAND:
         raise RuntimeError("補助スクリプトが大きすぎる")

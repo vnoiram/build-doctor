@@ -362,7 +362,7 @@ def test_powershell_without_host_is_unknown_but_requires_is_read(tmp_path):
 def test_powershell_helper_never_embeds_target_in_command():
     from build_doctor.collectors import powershell as psc
 
-    src = psc.HELPER.read_text(encoding="utf-8")
+    src = psc.helper_source()
     assert "Invoke-Expression" not in src and "Add-Type -" not in src
     assert "ParseFile" in src and "Import-Module -" not in src
 
