@@ -2,7 +2,16 @@ import json
 import os
 
 import pytest
-from helpers import SDK_CSPROJ, fake_tool, make_elf, make_pe, run_cli, validate, write
+from helpers import (
+    SDK_CSPROJ,
+    fake_tool,
+    make_elf,
+    make_metadata,
+    make_pe,
+    run_cli,
+    validate,
+    write,
+)
 
 posix_only = pytest.mark.skipif(
     os.name != "posix", reason="POSIX シェルによる擬似ツール"
@@ -107,6 +116,15 @@ def test_anycpu_with_x86_native_dependency_blames_the_boundary(tmp_path):
         rule_ids(data) == ["ARCH002"]
         and "ネイティブ境界" in data["records"][0]["meaning"]
     )
+
+
+def test_pinvoke_module_next_to_assembly_is_checked_without_native_dep_flag(tmp_path):
+    md = make_metadata(["System.Runtime"], ["Native"])
+    dll = write(tmp_path / "Any.dll", make_pe(0x14C, clr_flags=0x1, metadata=md))
+    write(tmp_path / "Native.dll", make_pe(0x14C))
+    res, data = jrun("inspect", str(dll), "--host-arch", "x64")
+    assert rule_ids(data) == ["ARCH002"] and res.returncode == 1
+    assert any(c["id"].startswith("dependency-graph:") for c in data["checks"])
 
 
 def test_broken_binary_is_reported_not_crashed(tmp_path):

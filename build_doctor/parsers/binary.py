@@ -6,6 +6,7 @@ import struct
 from typing import BinaryIO
 
 from . import FormatError
+from .metadata import parse_metadata
 
 PE_MACHINES = {
     0x14C: "x86",
@@ -121,7 +122,16 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
             if cb < 72:
                 raise FormatError("CORRUPT", "CLR ヘッダーの cb が不正")
             flags = r.u32(cor + 16)
+            md_rva, md_size = struct.unpack("<II", r.read(cor + 8, 8))
+            metadata, metadata_error = None, None
+            if md_rva and md_size:
+                try:
+                    metadata = parse_metadata(r.read, rva_to_off(md_rva), md_size)
+                except FormatError as e:
+                    metadata_error = {"reason_code": e.reason_code, "detail": e.detail}
             clr = {
+                "metadata": metadata,
+                "metadata_error": metadata_error,
                 "runtime_version": f"{r.u16(cor + 4)}.{r.u16(cor + 6)}",
                 "flags": flags,
                 "ilonly": bool(flags & COMIMAGE_ILONLY),

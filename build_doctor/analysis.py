@@ -276,11 +276,58 @@ def inspect_binary(session: Session, path: str, rel: str) -> None:
         did = r.add_fact("binary-header", dinfo, location=os.path.basename(dep))
         r.add_check(f"native-dep:{os.path.basename(dep)}", "completed")
         deps.append((did, os.path.basename(dep), dinfo))
+    deps.extend(_resolve_sibling_deps(session, path, rel, info, deps))
     arch_rules.evaluate_os(r, fid, os.path.basename(path), info)
     arch_rules.evaluate_binary(r, fid, os.path.basename(path), info, a.host_arch, deps)
     r.add_check(
         f"host-constraint:{rel}", "completed" if a.host_arch else "not_applicable"
     )
+
+
+def _dependency_names(info: dict) -> list[str]:
+    names = list(info.get("imports") or []) + list(info.get("needed") or [])
+    meta = (info.get("clr") or {}).get("metadata") or {}
+    for m in meta.get("pinvoke_modules", []):
+        n = m["name"]
+        names.extend([n, n + ".dll"] if "." not in n else [n])
+    names.extend(a["name"] + ".dll" for a in meta.get("assembly_refs", []))
+    return names
+
+
+def _resolve_sibling_deps(
+    session: Session, path: str, rel: str, info: dict, known: list
+) -> list[tuple[str, str, dict]]:
+    """静的に判明した依存名のうち、同じディレクトリに実在するものを CPU 照合の対象に加える。"""
+    r = session.report
+    names = _dependency_names(info)
+    if not names:
+        return []
+    base = os.path.dirname(os.path.abspath(path))
+    try:
+        local = {f.lower(): f for f in os.listdir(base)}
+    except OSError:
+        r.add_check(f"dependency-graph:{rel}", "unknown", reason_code="ACCESS_DENIED")
+        return []
+    seen = {n for _, n, _ in known}
+    found: list[tuple[str, str, dict]] = []
+    for name in dict.fromkeys(names):
+        actual = local.get(name.lower())
+        if not actual or actual in seen or actual == os.path.basename(path):
+            continue
+        seen.add(actual)
+        full = os.path.join(base, actual)
+        if os.path.islink(full) or not os.path.isfile(full):
+            continue
+        try:
+            f, size = _open_checked(full, MAX_BINARY)
+            with f:
+                dinfo = binparse.parse_binary(f, size)
+        except (FormatError, OSError):
+            continue
+        did = r.add_fact("binary-header", dinfo, location=actual)
+        found.append((did, actual, dinfo))
+    r.add_check(f"dependency-graph:{rel}", "completed")
+    return found
 
 
 def inspect_project(session: Session, path: str, rel: str) -> None:

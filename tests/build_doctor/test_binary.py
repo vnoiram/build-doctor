@@ -94,3 +94,28 @@ def test_elf_needed_from_real_binary():
     with open(path, "rb") as f:
         info = parse_binary(f, os.path.getsize(path))
     assert any(n.startswith("libc.") for n in info["needed"])
+
+
+def test_managed_metadata_assembly_refs_and_pinvoke_modules():
+    from helpers import make_metadata
+
+    md = make_metadata(["System.Runtime", "Other.Lib"], ["native.dll", "kernel32.dll"])
+    info = parse(make_pe(0x14C, clr_flags=0x1, metadata=md))
+    meta = info["clr"]["metadata"]
+    assert [a["name"] for a in meta["assembly_refs"]] == ["System.Runtime", "Other.Lib"]
+    assert meta["assembly_refs"][0]["version"] == "1.2.3.4"
+    assert {m["name"] for m in meta["pinvoke_modules"]} == {
+        "native.dll",
+        "kernel32.dll",
+    }
+    assert info["clr"]["metadata_error"] is None
+
+
+def test_corrupt_metadata_is_reported_not_raised():
+    from helpers import make_metadata
+
+    md = bytearray(make_metadata(["A"], ["m.dll"]))
+    md[0:4] = b"XXXX"
+    info = parse(make_pe(0x14C, clr_flags=0x1, metadata=bytes(md)))
+    assert info["clr"]["metadata"] is None
+    assert info["clr"]["metadata_error"]["reason_code"] == "CORRUPT"
