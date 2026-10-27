@@ -25,6 +25,7 @@ COMIMAGE_NATIVE_ENTRYPOINT = 0x10
 COMIMAGE_32BITPREFERRED = 0x20000
 
 MAX_SECTIONS = 96
+MAX_DEPS = 512
 
 
 class _Reader:
@@ -130,6 +131,16 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
                 "native_entrypoint": bool(flags & COMIMAGE_NATIVE_ENTRYPOINT),
             }
 
+    imports: list[str] = []
+    imports_error = None
+    if n_dirs > 1 and dd_off + 2 * 8 <= opt_size:
+        imp_rva, imp_size = struct.unpack("<II", r.read(opt + dd_off + 8, 8))
+        if imp_rva and imp_size:
+            try:
+                imports = _pe_imports(r, rva_to_off, imp_rva)
+            except FormatError as e:
+                imports_error = e.detail
+
     machine = PE_MACHINES.get(machine_raw, f"other(0x{machine_raw:x})")
     result = {
         "format": "PE",
@@ -140,9 +151,90 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
         "subsystem": subsystem,
         "managed": clr is not None,
         "clr": clr,
+        "imports": imports,
+        "imports_error": imports_error,
     }
     result.update(_classify_pe(machine, clr))
     return result
+
+
+def _cstring(r: _Reader, off: int, limit: int = 260) -> str:
+    n = min(limit, r.size - off)
+    if n <= 0:
+        raise FormatError("CORRUPT", "文字列の位置がファイル外")
+    raw = r.read(off, n)
+    end = raw.find(b"\0")
+    if end < 0:
+        raise FormatError("CORRUPT", "終端のない文字列")
+    return raw[:end].decode("utf-8", errors="replace")
+
+
+def _pe_imports(r: _Reader, rva_to_off, imp_rva: int) -> list[str]:
+    """インポートテーブルの DLL 名のみ(静的な名前。実効探索パスは評価しない)。"""
+    names: list[str] = []
+    off = rva_to_off(imp_rva)
+    for i in range(MAX_DEPS):
+        entry = r.read(off + 20 * i, 20)
+        if entry == b"\0" * 20:
+            break
+        name_rva = struct.unpack("<I", entry[12:16])[0]
+        names.append(_cstring(r, rva_to_off(name_rva)))
+    else:
+        raise FormatError("CORRUPT", "インポートテーブルが終端しない")
+    return names
+
+
+def _elf_needed(r: _Reader, is64: bool, endian: str) -> list[str]:
+    """DT_NEEDED のエントリ名。セクションヘッダーがない場合は空。"""
+    if is64:
+        e_shoff = struct.unpack(endian + "Q", r.read(0x28, 8))[0]
+        e_shentsize, e_shnum = struct.unpack(endian + "HH", r.read(0x3A, 4))
+        min_ent = 64
+    else:
+        e_shoff = struct.unpack(endian + "I", r.read(0x20, 4))[0]
+        e_shentsize, e_shnum = struct.unpack(endian + "HH", r.read(0x2E, 4))
+        min_ent = 40
+    if not e_shoff or not e_shnum:
+        return []
+    if e_shentsize < min_ent or e_shnum > 4096:
+        raise FormatError("CORRUPT", "ELF セクションヘッダーの定義が不正")
+
+    def sec(i: int) -> tuple[int, int, int, int]:
+        b = r.read(e_shoff + e_shentsize * i, e_shentsize)
+        if is64:
+            t = struct.unpack(endian + "I", b[4:8])[0]
+            off, size = struct.unpack(endian + "QQ", b[24:40])
+            link = struct.unpack(endian + "I", b[40:44])[0]
+        else:
+            t = struct.unpack(endian + "I", b[4:8])[0]
+            off, size, link = struct.unpack(endian + "III", b[16:28])
+        return t, off, size, link
+
+    needed: list[str] = []
+    for i in range(e_shnum):
+        t, off, size, link = sec(i)
+        if t != 6:  # SHT_DYNAMIC
+            continue
+        if link >= e_shnum:
+            raise FormatError("CORRUPT", "動的セクションの文字列表参照が不正")
+        _t, stroff, strsize, _l = sec(link)
+        ent = 16 if is64 else 8
+        fmt = endian + ("qQ" if is64 else "iI")
+        count = size // ent
+        if count > 8192:
+            raise FormatError("CORRUPT", "動的セクションが大きすぎる")
+        for j in range(count):
+            tag, val = struct.unpack(fmt, r.read(off + ent * j, ent))
+            if tag == 0:
+                break
+            if tag == 1:
+                if val >= strsize:
+                    raise FormatError("CORRUPT", "DT_NEEDED の文字列位置が不正")
+                needed.append(_cstring(r, stroff + val))
+                if len(needed) >= MAX_DEPS:
+                    break
+        break
+    return needed
 
 
 def _classify_pe(machine: str, clr: dict | None) -> dict:
@@ -171,6 +263,12 @@ def parse_elf(f: BinaryIO, size: int) -> dict:
     endian = "<" if ei_data == 1 else ">"
     e_type, e_machine = struct.unpack(endian + "HH", r.read(16, 4))
     machine = ELF_MACHINES.get(e_machine, f"other({e_machine})")
+    needed: list[str] = []
+    needed_error = None
+    try:
+        needed = _elf_needed(r, ei_class == 2, endian)
+    except (FormatError, struct.error) as e:
+        needed_error = getattr(e, "detail", str(e))
     return {
         "format": "ELF",
         "elf_class": 32 if ei_class == 1 else 64,
@@ -181,6 +279,8 @@ def parse_elf(f: BinaryIO, size: int) -> dict:
         "kind": "native",
         "managed": False,
         "mixed_mode": False,
+        "needed": needed,
+        "needed_error": needed_error,
     }
 
 

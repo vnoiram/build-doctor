@@ -69,3 +69,28 @@ def test_huge_pe_offset():
     data[0x3C:0x40] = (0x7FFFFFF0).to_bytes(4, "little")
     with pytest.raises(FormatError):
         parse(bytes(data))
+
+
+def test_pe_import_names_are_listed():
+    info = parse(make_pe(0x8664, pe32plus=True, imports="native.dll"))
+    assert info["imports"] == ["native.dll"] and info["imports_error"] is None
+
+
+def test_pe_without_imports_has_empty_list():
+    assert parse(make_pe(0x8664, pe32plus=True))["imports"] == []
+
+
+def test_elf_without_section_headers_has_no_needed():
+    info = parse(make_elf())
+    assert info["needed"] == [] and info["needed_error"] is None
+
+
+def test_elf_needed_from_real_binary():
+    import os
+
+    path = "/bin/ls"
+    if not os.path.isfile(path):
+        pytest.skip("no sample ELF")
+    with open(path, "rb") as f:
+        info = parse_binary(f, os.path.getsize(path))
+    assert any(n.startswith("libc.") for n in info["needed"])

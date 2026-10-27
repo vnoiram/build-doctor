@@ -22,6 +22,7 @@ def make_pe(
     dll: bool = True,
     truncate: int | None = None,
     bad_rva: bool = False,
+    imports: str | None = None,
 ) -> bytes:
     """最小の PE。clr_flags が None ならネイティブ。"""
     opt_size = 240 if pe32plus else 224
@@ -34,6 +35,8 @@ def make_pe(
         struct.pack_into(
             "<II", opt, dd_off + 14 * 8, 0xDEAD000 if bad_rva else 0x1000, 72
         )
+    if imports is not None:
+        struct.pack_into("<II", opt, dd_off + 8, 0x1100, 40)
     chars = 0x2000 if dll else 0x0002
     coff = struct.pack("<HHIIIHH", machine, 1, 0, 0, 0, opt_size, chars)
     section = struct.pack(
@@ -49,6 +52,9 @@ def make_pe(
     if clr_flags is not None:
         struct.pack_into("<IHH", body, 0, 72, 2, 5)
         struct.pack_into("<I", body, 16, clr_flags)
+    if imports is not None:
+        struct.pack_into("<I", body, 0x100 + 12, 0x1180)
+        body[0x180 : 0x180 + len(imports) + 1] = imports.encode() + b"\0"
     data = bytes(header) + bytes(body)
     return data[:truncate] if truncate is not None else data
 
