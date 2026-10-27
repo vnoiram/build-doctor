@@ -18,7 +18,7 @@ from .parsers import FormatError
 from .parsers import binary as binparse
 from .parsers import logs as logparse
 from .parsers import project as proj
-from .parsers.powershell import scan_requires
+from .parsers.powershell import scan_csharp_literal, scan_requires
 from .rules import arch as arch_rules
 from .rules import dependency as dep_rules
 from .rules import framework as fx_rules
@@ -418,6 +418,9 @@ def inspect_powershell(session: Session, path: str, rel: str) -> None:
             ps_rules.evaluate_manifest(r, name, label, fid, h, data["manifest"])
         dyn = 0
         for ref in data.get("references") or []:
+            code = ref.pop("code", None)  # ソース本文はレポートに載せない
+            if code is not None:
+                ref["csharp"] = scan_csharp_literal(code)
             r.add_fact("ps-reference", ref, location=f"{rel}:{ref.get('line')}")
             dyn += ref.get("kind") == "dynamic"
         if dyn:

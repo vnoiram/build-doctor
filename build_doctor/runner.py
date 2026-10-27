@@ -38,7 +38,61 @@ def can_manage_process_tree() -> bool:
     return shutil.which("taskkill") is not None
 
 
-def _kill_tree(proc: subprocess.Popen) -> None:
+def _create_job():
+    """Windows: 配下ごと終了できる Job Object。作れなければ None（taskkill にフォールバック）。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateJobObjectW.restype = wintypes.HANDLE
+        k32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        job = k32.CreateJobObjectW(None, None)
+        if not job:
+            return None
+
+        class BasicLimit(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class IoCounters(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_uint64) for n in ("a", "b", "c", "d", "e", "f")]
+
+        class ExtLimit(ctypes.Structure):
+            _fields_ = [("Basic", BasicLimit), ("Io", IoCounters), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        info = ExtLimit()
+        info.Basic.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        ok = k32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))
+        return [k32, job] if ok else None
+    except (OSError, AttributeError, ImportError):
+        return None
+
+
+def _assign_job(job, proc: subprocess.Popen) -> bool:
+    try:
+        k32, handle = job
+        return bool(k32.AssignProcessToJobObject(handle, int(proc._handle)))  # type: ignore[attr-defined]
+    except (OSError, AttributeError, TypeError):
+        return False
+
+
+def _close_job(job) -> None:
+    try:
+        if job[1] is not None:
+            handle, job[1] = job[1], None  # 二重クローズを避ける
+            job[0].CloseHandle(handle)  # KILL_ON_JOB_CLOSE により配下も終了する
+    except (OSError, AttributeError, TypeError):
+        pass
+
+
+def _kill_tree(proc: subprocess.Popen, job=None) -> None:
+    if job is not None:
+        _close_job(job)
     try:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
@@ -65,6 +119,7 @@ def run(argv: list[str], *, timeout: float, max_output_bytes: int, cwd: str | No
     else:
         kwargs["creationflags"] = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                                    | getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    job = None
     try:
         proc = subprocess.Popen(argv, **kwargs)
     except FileNotFoundError as e:
@@ -76,6 +131,11 @@ def run(argv: list[str], *, timeout: float, max_output_bytes: int, cwd: str | No
     except OSError as e:
         result.reason_code, result.detail = "EXEC_FAILED", str(e)
         return result
+
+    if os.name == "nt":
+        job = _create_job()
+        if job is not None and not _assign_job(job, proc):
+            job = None
 
     exceeded = threading.Event()
     bufs = {"stdout": bytearray(), "stderr": bytearray()}
@@ -120,18 +180,18 @@ def run(argv: list[str], *, timeout: float, max_output_bytes: int, cwd: str | No
                 pass
             if exceeded.is_set():
                 result.output_exceeded, result.killed = True, True
-                _kill_tree(proc)
+                _kill_tree(proc, job)
                 break
             if time.monotonic() >= deadline:
                 result.timed_out, result.killed = True, True
-                _kill_tree(proc)
+                _kill_tree(proc, job)
                 break
     except BaseException:
-        _kill_tree(proc)
+        _kill_tree(proc, job)
         raise
     finally:
         # 親が終了しても孫が残っている場合に備え、プロセスグループ全体を片付ける
-        _kill_tree(proc)
+        _kill_tree(proc, job)
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:

@@ -29,3 +29,13 @@ def version_tuple(v: str | None) -> tuple[int, ...] | None:
         return None
     m = re.match(r"(\d+(?:\.\d+){0,3})", v.strip())
     return tuple(int(x) for x in m.group(1).split(".")) if m else None
+
+
+_DLLIMPORT = re.compile(r'\[\s*(?:System\.Runtime\.InteropServices\.)?DllImport\s*\(\s*"(?P<lib>[^"]+)"')
+_USING = re.compile(r"^\s*using\s+(?P<ns>[\w.]+)\s*;", re.MULTILINE)
+
+
+def scan_csharp_literal(code: str) -> dict:
+    """Add-Type の静的な C# リテラルから DllImport 先と using だけを抽出する(コンパイルはしない)。"""
+    return {"dll_imports": sorted(set(_DLLIMPORT.findall(code))),
+            "usings": sorted(set(_USING.findall(code)))}

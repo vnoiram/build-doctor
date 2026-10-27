@@ -56,3 +56,4 @@ python3 -m pip install pytest && python3 -m pytest
 `LOG000`(未分類の診断)、`BUILD000`(診断なしのビルド失敗)。
 
 Rule ID の登録簿は `build_doctor/rules/registry.py`。`.binlog` は未対応です。
+Windows では Job Object(作成できなければ `taskkill /T`)で子プロセスツリーを停止します。`Add-Type` の静的 C# リテラルからは DllImport 先と using のみ抽出します(本文は保存しない)。

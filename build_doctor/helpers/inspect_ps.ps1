@@ -75,6 +75,7 @@ if ($req.mode -eq 'parse') {
                 $item.kind = 'literal'
                 if ($pname -like 'typedef*' -or $pname -like 'memberdef*' -or ($name -eq 'Add-Type' -and $pname -eq '')) {
                     $item.length = $val.Value.Length
+                    if ($val.Value.Length -le 65536) { $item.code = $val.Value }
                 }
                 else { $item.value = $val.Value }
             }
