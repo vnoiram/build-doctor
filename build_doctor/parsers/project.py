@@ -13,7 +13,7 @@ from . import FormatError
 WATCHED = ("TargetFramework", "TargetFrameworks", "TargetFrameworkVersion", "RuntimeIdentifier",
            "RuntimeIdentifiers", "PlatformTarget", "Prefer32Bit", "LangVersion", "Nullable",
            "AllowUnsafeBlocks", "UseWPF", "UseWindowsForms", "EnableWindowsTargeting",
-           "OutputType")
+           "OutputType", "SelfContained")
 MAX_UPWARD = 16
 KNOWN_GLOBAL_TOP = {"sdk", "tools", "msbuild-sdks", "test"}
 KNOWN_GLOBAL_SDK = {"version", "rollForward", "allowPrerelease", "paths", "errorMessage"}
@@ -262,3 +262,48 @@ def assets_matches(assets: dict, tfms: list[str], rids: list[str]) -> tuple[list
     missing_tfm = [t for t in tfms if _tfm_base(t) not in have]
     missing_rid = [r for r in rids if r not in assets["rids"]]
     return missing_tfm, missing_rid
+
+
+def resolve_reference(project_dir: str, value: str) -> str | None:
+    """相対参照を絶対パスにする。式を含む値は静的に解決できないので None。"""
+    if not value or "$(" in value or "@(" in value or "%" in value:
+        return None
+    return os.path.normpath(os.path.join(project_dir, value.replace("\\", os.sep)))
+
+
+def find_build_artifacts(project_dir: str, max_files: int = 20) -> dict:
+    """Directory.Build.targets、packages.lock.json、bin 配下の runtimeconfig / deps.json。"""
+    out: dict = {"directory_build_targets": find_upward(project_dir, ("Directory.Build.targets",)),
+                 "packages_lock": None, "runtimeconfigs": [], "deps_json_count": 0}
+    lock = os.path.join(project_dir, "packages.lock.json")
+    if os.path.isfile(lock):
+        try:
+            obj = json.loads(read_bytes_limited(lock, 64 * 1024 * 1024).decode("utf-8-sig"))
+            out["packages_lock"] = {"path": lock, "version": obj.get("version"),
+                                    "targets": sorted((obj.get("dependencies") or {}).keys())}
+        except (FormatError, ValueError, OSError):
+            out["packages_lock"] = {"path": lock, "error": True}
+    bin_dir = os.path.join(project_dir, "bin")
+    base_depth = bin_dir.rstrip(os.sep).count(os.sep)
+    for cur, dirs, files in os.walk(bin_dir, followlinks=False):
+        if cur.count(os.sep) - base_depth >= 4:
+            dirs[:] = []
+        for fn in sorted(files):
+            full = os.path.join(cur, fn)
+            if os.path.islink(full):
+                continue
+            if fn.endswith(".deps.json"):
+                out["deps_json_count"] += 1
+            elif fn.endswith(".runtimeconfig.json") and len(out["runtimeconfigs"]) < max_files:
+                try:
+                    opts = json.loads(read_bytes_limited(full, 1024 * 1024).decode("utf-8-sig")
+                                      ).get("runtimeOptions", {})
+                except (FormatError, ValueError, OSError):
+                    out["runtimeconfigs"].append({"path": full, "error": True})
+                    continue
+                fws = opts.get("frameworks") or ([opts["framework"]] if "framework" in opts else [])
+                out["runtimeconfigs"].append({
+                    "path": full, "tfm": opts.get("tfm"),
+                    "frameworks": [{"name": f.get("name"), "version": f.get("version")} for f in fws
+                                   if isinstance(f, dict)]})
+    return out

@@ -66,6 +66,9 @@ def query(path: str, timeout: float, max_bytes: int) -> dict:
         text = res.text()
         if key == "sdks":
             info["sdks"] = parse_sdks(text)
+            for sdk in info["sdks"]:
+                sdk["has_csc"] = os.path.isfile(os.path.join(
+                    sdk["path"], sdk["version"], "Roslyn", "bincore", "csc.dll"))
         elif key == "runtimes":
             info["runtimes"] = parse_runtimes(text)
         else:
@@ -101,6 +104,26 @@ def sdk_major(version: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+NETFX_RELEASES = ((533320, "4.8.1"), (528040, "4.8"), (461808, "4.7.2"), (461308, "4.7.1"),
+                  (460798, "4.7"), (394802, "4.6.2"), (394254, "4.6.1"), (393295, "4.6"),
+                  (379893, "4.5.2"), (378675, "4.5.1"), (378389, "4.5"))
+
+
+def netfx_version(release: int | None) -> str | None:
+    """Release レジストリ値 → 実行用 Framework のバージョン。"""
+    if release is None:
+        return None
+    return next((v for r, v in NETFX_RELEASES if release >= r), None)
+
+
+def framework_compilers() -> list[str]:
+    """Framework ディレクトリ内の csc.exe。SDK 内のコンパイラーとは別物。"""
+    win = os.environ.get("SystemRoot", r"C:\Windows")
+    cands = [os.path.join(win, "Microsoft.NET", d, "v4.0.30319", "csc.exe")
+             for d in ("Framework64", "Framework")]
+    return [c for c in cands if os.path.isfile(c)]
+
+
 def netframework_installs() -> dict | None:
     """Windows のみ。32/64bit レジストリビューを別々に照会する。"""
     if not is_windows():
@@ -114,12 +137,13 @@ def netframework_installs() -> dict | None:
                                 r"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full",
                                 0, winreg.KEY_READ | flag) as k:
                 release, _ = winreg.QueryValueEx(k, "Release")
-                out["views"][label] = {"release": int(release)}
+                out["views"][label] = {"release": int(release), "version": netfx_version(int(release))}
         except OSError as e:
             out["views"][label] = {"release": None, "reason_code": "ACCESS_DENIED"
                                    if isinstance(e, PermissionError) else "NOT_FOUND"}
     base = os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
                         "Reference Assemblies", "Microsoft", "Framework", ".NETFramework")
+    out["compilers"] = framework_compilers()
     out["reference_assemblies_dir"] = base
     out["targeting_packs"] = sorted(os.listdir(base)) if os.path.isdir(base) else []
     return out

@@ -57,3 +57,34 @@ def evaluate_requires(report: Report, name: str, host_label: str, host_fact: str
             evidence=[host_fact], meaning="#requires -PSEdition の要求をこのホストは満たさない。",
             limit="指定/検出したホストのみの判定。",
             next_steps=["要求を満たすエディションのホストを `--powershell-path` で指定する"])
+
+
+def evaluate_files(report: Report, name: str, fid: str, base_dir: str, data: dict) -> None:
+    """マニフェストと Add-Type -Path が指す静的なファイルの存在確認(読み込みはしない)。"""
+    import os
+    wanted: list[tuple[str, str]] = []
+    manifest = data.get("manifest") or {}
+    for key in ("RootModule", "NestedModules", "RequiredAssemblies"):
+        v = manifest.get(key)
+        for item in ([v] if isinstance(v, str) else v if isinstance(v, list) else []):
+            if isinstance(item, str):
+                wanted.append((key, item))
+    for ref in data.get("references") or []:
+        if ref.get("command") == "Add-Type" and ref.get("param") in ("path", "literalpath") \
+                and ref.get("kind") == "literal" and ref.get("value"):
+            wanted.append(("Add-Type -Path", ref["value"]))
+    missing = []
+    for key, item in wanted:
+        if "$" in item or "*" in item:
+            continue
+        if key in ("RootModule", "NestedModules") and "." not in os.path.basename(item):
+            continue  # 拡張子なしはモジュール名であり、ファイルパスではない
+        cand = item if os.path.isabs(item) else os.path.join(base_dir, item.replace("\\", os.sep))
+        if not os.path.exists(cand):
+            missing.append(f"{key}: {item}")
+    if missing:
+        report.add_finding(
+            "PS003", "CANDIDATE", "warning", f"{name} が参照する静的パスが見つからない {len(missing)} 件",
+            evidence=[fid], meaning="; ".join(missing[:5]) + " — 読み込み失敗の原因候補。",
+            limit="スクリプトの実行時カレントや $PSScriptRoot 展開後の解決は評価していない。拡張子なしのモジュール名は対象外。",
+            next_steps=["ファイルの配置と相対パスの基準ディレクトリを確認する"])

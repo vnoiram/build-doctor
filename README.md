@@ -47,3 +47,10 @@ python3 build_doctor.py build ./src/App.csproj [--restore]     # 明示的な実
 ```bash
 python3 -m pip install pytest && python3 -m pytest
 ```
+
+## 設計書への追加ルール
+
+設計書の表にない補助ルール: `ARCH002`(ネイティブ依存の CPU 不一致)、`ARCH003`(PlatformTarget / RID / ホストの不整合)、
+`OS001`(この OS では扱えない形式)、`WIN001`(Windows 固有要件)、`RT001`(実行用 runtime の不足)、
+`DEP004`(参照先ファイルなし)、`PS002`(#requires / マニフェスト要求の不一致)、`PS003`(静的パスの欠落)、
+`LOG000`(未分類の診断)、`BUILD000`(診断なしのビルド失敗)。

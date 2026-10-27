@@ -19,6 +19,7 @@ from .parsers import logs as logparse
 from .parsers import project as proj
 from .parsers.powershell import scan_requires
 from .rules import arch as arch_rules
+from .rules import dependency as dep_rules
 from .rules import framework as fx_rules
 from .rules import log_rules
 from .rules import powershell as ps_rules
@@ -299,6 +300,17 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
         r, p, fid, dotnet=dotnet_info, selection=selection, global_json=gj, gj_fact=gj_fact,
         assets=assets, assets_fact=assets_fact, framework=a.framework, runtime=a.runtime,
         netfx=netfx, name=os.path.basename(path))
+    dep_rules.evaluate_platform(r, p, fid, a.host_arch, a.runtime)
+    dep_rules.evaluate_langversion(r, p, fid, (selection or {}).get("selected"))
+    if p["sdk_style"]:
+        dep_rules.evaluate_runtime(r, p, fid, dotnet_info)
+    unresolved = dep_rules.evaluate_references(r, p, fid, project_dir)
+    if unresolved:
+        r.add_check(f"references:{rel}", "unknown", reason_code="UNEVALUATED_PROPERTY",
+                    detail=f"式を含む参照 {unresolved} 件は静的に解決していない")
+    arts = proj.find_build_artifacts(project_dir)
+    arts_fact = r.add_fact("build-artifacts", arts, location=project_dir)
+    dep_rules.evaluate_runtimeconfigs(r, arts, arts_fact, dotnet_info)
     if p["uses_packages_config"]:
         r.add_check(f"packages-config:{rel}", "unknown", reason_code="UNSUPPORTED_FORMAT",
                     detail="packages.config の解決状態は未評価")
@@ -381,6 +393,7 @@ def inspect_powershell(session: Session, path: str, rel: str) -> None:
         if data.get("requires"):
             merged = {**merged, **{k: v for k, v in data["requires"].items() if v}}
         ps_rules.evaluate_requires(r, name, label, fid, h, merged)
+        ps_rules.evaluate_files(r, name, fid, os.path.dirname(os.path.abspath(path)), data)
         if data.get("manifest"):
             ps_rules.evaluate_manifest(r, name, label, fid, h, data["manifest"])
         dyn = 0
