@@ -318,7 +318,7 @@ def test_home_and_project_paths_are_placeholders(tmp_path):
     shown = run_cli(
         "inspect", str(p), "--static-only", "--format", "json", "--show-paths"
     )
-    assert str(tmp_path).encode() in shown.stdout
+    assert json.dumps(str(tmp_path))[1:-1].encode() in shown.stdout
 
 
 def test_text_output_has_no_ansi_when_piped(tmp_path):

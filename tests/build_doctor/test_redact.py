@@ -15,7 +15,7 @@ def test_secret_patterns():
 
 def test_path_placeholders(tmp_path):
     r = Redactor(str(tmp_path / "proj"))
-    assert r.text(f"{tmp_path}/proj/src/A.cs") == "<PROJECT>/src/A.cs"
+    assert r.text(f"{tmp_path.as_posix()}/proj/src/A.cs") == "<PROJECT>/src/A.cs"
     assert (
         Redactor(str(tmp_path), show_paths=True).text(f"{tmp_path}/x")
         == f"{tmp_path}/x"
