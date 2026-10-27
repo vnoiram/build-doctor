@@ -8,7 +8,7 @@ PowerShell スクリプト、C# プロジェクト、DLL/EXE、ビルドログ�
 
 ## 必要環境
 
-Python 3.11 以降（標準ライブラリのみ）。.NET SDK / PowerShell は任意で、無くても `env` / `explain` / PE・ELF の静的解析は動きます。
+Python 3.11 以降（標準ライブラリのみ）。.NET SDK / PowerShell は任意で、無くても `env` / `explain` / PE・ELF の静的解析は動きます。`env` は MSBuild の所在も存在確認のみで検出します。
 
 ## 使い方
 
@@ -54,3 +54,5 @@ python3 -m pip install pytest && python3 -m pytest
 `OS001`(この OS では扱えない形式)、`WIN001`(Windows 固有要件)、`RT001`(実行用 runtime の不足)、
 `DEP004`(参照先ファイルなし)、`PS002`(#requires / マニフェスト要求の不一致)、`PS003`(静的パスの欠落)、
 `LOG000`(未分類の診断)、`BUILD000`(診断なしのビルド失敗)。
+
+Rule ID の登録簿は `build_doctor/rules/registry.py`。`.binlog` は未対応です。

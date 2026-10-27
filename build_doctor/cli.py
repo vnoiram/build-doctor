@@ -121,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(USAGE_EXAMPLES)
         return EXIT_USAGE
     _defaults(args)
+    if args.output and os.path.exists(args.output):
+        sys.stderr.write(f"エラー: --output の保存先が既に存在する(上書きしない): {args.output}\n")
+        return EXIT_USAGE
 
     def progress(msg: str) -> None:
         if not args.quiet:

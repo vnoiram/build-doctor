@@ -61,7 +61,7 @@ def test_env_without_tools_still_runs(tmp_path):
 def test_env_static_only_skips_tools(tmp_path, dotnet):
     res, data = jrun("env", "--static-only", "--dotnet-path", str(dotnet))
     assert res.returncode == 0
-    assert [c["outcome"] for c in data["checks"] if c["id"].endswith("discovery")] == ["skipped", "skipped"]
+    assert [c["outcome"] for c in data["checks"] if c["id"].endswith("discovery")] == ["skipped"] * 3
 
 
 # ---------------------------------------------------------------- 32/64bit

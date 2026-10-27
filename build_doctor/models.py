@@ -6,6 +6,7 @@ import datetime
 from typing import Any
 
 from . import SCHEMA_VERSION, __version__
+from .rules.registry import RULES
 
 STATUSES = ("CONFIRMED", "CONFIGURED", "CANDIDATE", "UNKNOWN")
 SEVERITIES = ("info", "warning", "error")
@@ -55,6 +56,7 @@ class Report:
                     evidence: list[str] | tuple = (), meaning: str, limit: str,
                     next_steps: list[str] | tuple = (), related: list[str] | tuple = ()) -> str:
         assert status in STATUSES and severity in SEVERITIES
+        assert rule_id in RULES, f"未登録の Rule ID: {rule_id}"
         fid = f"finding-{len(self.records) + 1}"
         self.records.append({
             "id": fid, "rule_id": rule_id, "status": status, "severity": severity,

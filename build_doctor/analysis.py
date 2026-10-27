@@ -11,6 +11,7 @@ import time
 from . import runner
 from .collectors import dotnet as dn
 from .collectors import normalize_arch, process_arch
+from .collectors import msbuild as msb
 from .collectors import powershell as psc
 from .models import Report
 from .parsers import FormatError
@@ -83,6 +84,7 @@ class Session:
         self._dotnet_scope: dict = {}
         self._ps: list[dict] | None = None
         self._netfx: tuple[bool, dict | None] | None = None
+        self._msbuilds: list[dict] | None = None
 
     def progress(self, msg: str) -> None:
         cb = getattr(self.args, "_progress", None)
@@ -141,6 +143,21 @@ class Session:
         self._ps = hosts
         return hosts
 
+    # ---- MSBuild / コンパイラー ----
+    def msbuilds(self) -> list[dict]:
+        if self._msbuilds is None:
+            cands = msb.discover(self.args.msbuild_path)
+            self.report.add_fact("msbuild-discovery", {
+                "candidates": cands, "searched": ["--msbuild-path"] if self.args.msbuild_path else
+                ["PATH", "known Visual Studio / Build Tools locations"],
+                "note": "存在のみ確認。実行・バージョン照会はしていない"})
+            missing = [c for c in cands if not c.get("exists")]
+            self.report.add_check("msbuild-discovery", "unknown" if missing else "completed",
+                                  reason_code="TOOL_MISSING" if missing else None,
+                                  detail="指定された MSBuild が存在しない" if missing else None)
+            self._msbuilds = cands
+        return self._msbuilds
+
     # ---- .NET Framework ----
     def netfx(self) -> dict | None:
         if self._netfx is None:
@@ -165,11 +182,12 @@ def run_env(session: Session) -> None:
         "env": {k: os.environ[k] for k in ENV_ALLOWLIST if k in os.environ}})
     r.add_check("os-info", "completed")
     if session.static_only:
-        for cid in ("dotnet-discovery", "powershell-discovery"):
+        for cid in ("dotnet-discovery", "powershell-discovery", "msbuild-discovery"):
             r.add_check(cid, "skipped", reason_code="STATIC_ONLY")
     else:
         session.dotnets()
         session.ps_hosts()
+        session.msbuilds()
     session.netfx()
 
 
@@ -311,6 +329,8 @@ def inspect_project(session: Session, path: str, rel: str) -> None:
     arts = proj.find_build_artifacts(project_dir)
     arts_fact = r.add_fact("build-artifacts", arts, location=project_dir)
     dep_rules.evaluate_runtimeconfigs(r, arts, arts_fact, dotnet_info)
+    if p["sdk_style"]:
+        dep_rules.evaluate_restore_state(r, p, fid, os.path.abspath(path), assets_path, arts, arts_fact)
     if p["uses_packages_config"]:
         r.add_check(f"packages-config:{rel}", "unknown", reason_code="UNSUPPORTED_FORMAT",
                     detail="packages.config の解決状態は未評価")
@@ -337,7 +357,7 @@ def inspect_solution(session: Session, path: str, rel: str) -> None:
                     detail=f"プロジェクト数が上限 {MAX_PROJECTS_IN_SLN} を超えた")
 
 
-def _decode_script(path: str) -> str | None:
+def _decode_script(path: str, encoding: str | None = None) -> str | None:
     try:
         f, _ = _open_checked(path, MAX_TEXT)
     except (FormatError, OSError):
@@ -351,8 +371,8 @@ def _decode_script(path: str) -> str | None:
             except UnicodeDecodeError:
                 return None
     try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError:
+        return data.decode(encoding or "utf-8")
+    except (UnicodeDecodeError, LookupError):
         return None
 
 
@@ -361,10 +381,10 @@ def inspect_powershell(session: Session, path: str, rel: str) -> None:
     name = os.path.basename(path)
     req = None
     if os.path.splitext(path)[1].lower() != ".psd1":
-        text = _decode_script(path)
+        text = _decode_script(path, a.input_encoding)
         if text is None:
             r.add_check(f"ps-requires:{rel}", "unknown", reason_code="DECODE_ERROR",
-                        detail="#requires を UTF-8/BOM 付きとして読めない")
+                        detail="#requires を復号できない(BOM なしは UTF-8 既定。--input-encoding で指定可)")
         else:
             req = scan_requires(text)
             r.add_fact("ps-requires", req, location=rel)
@@ -497,6 +517,8 @@ def run_inspect(session: Session, target: str) -> None:
 # ------------------------------------------------------------------ explain
 def run_explain(session: Session, source: str) -> None:
     r, a = session.report, session.args
+    if source.lower().endswith(".binlog"):
+        raise UsageError("バイナリログ(.binlog)の読み込みは未対応。テキストログを指定してください")
     project_findings_start = len(r.records)
     if a.project:
         if not os.path.isfile(a.project):

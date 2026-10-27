@@ -8,6 +8,7 @@ import re
 from ..collectors.dotnet import sdk_major, tfm_major
 from ..models import Report
 from ..parsers.project import effective, resolve_reference
+from . import format_command
 
 MAX_CSHARP_BY_SDK = {6: 10.0, 7: 11.0, 8: 12.0, 9: 13.0, 10: 14.0}
 CPU = {"x86", "x64", "arm64", "arm"}
@@ -133,3 +134,31 @@ def evaluate_references(report: Report, proj: dict, fid: str, project_dir: str) 
             limit="Condition や Import による実効値は評価していない。ビルドで生成される参照先は存在しない場合がある。",
             next_steps=["参照先の配置、先行プロジェクトのビルド、パスの誤記を確認する"])
     return unresolved
+
+
+def evaluate_restore_state(report: Report, proj: dict, fid: str, project_path: str,
+                           assets_path: str | None, arts: dict, arts_fact: str) -> None:
+    """assets / lock の新しさと対象 TFM との整合。存在は restore 成功の証明ではない。"""
+    restore = format_command(["dotnet", "restore", project_path])
+    if assets_path and os.path.isfile(assets_path):
+        try:
+            stale = os.path.getmtime(assets_path) < os.path.getmtime(project_path)
+        except OSError:
+            stale = False
+        if stale:
+            report.add_finding(
+                "DEP003", "CANDIDATE", "warning", "project.assets.json がプロジェクトファイルより古い",
+                evidence=[fid, arts_fact], meaning="プロジェクト変更後に restore されていない候補(既存キャッシュに基づく)。",
+                limit="更新時刻のみの比較。Directory.Build.props 等の変更や内容の差は未評価。",
+                next_steps=[f"restore を実行する: {restore}"])
+    lock = arts.get("packages_lock")
+    if lock and not lock.get("error") and proj["tfms"]:
+        have = {t.split("/")[0].lower() for t in lock.get("targets") or []}
+        missing = [t for t in proj["tfms"] if t.lower() not in have]
+        if have and missing:
+            report.add_finding(
+                "DEP003", "CANDIDATE", "warning",
+                f"packages.lock.json に対象 {', '.join(missing)} の節がない",
+                evidence=[fid, arts_fact], meaning="TargetFramework の変更後にロックファイルが更新されていない候補。",
+                limit="ロックファイルの依存内容と実際の参照の整合は未評価。",
+                next_steps=[f"restore を実行して lock を更新するか検討する: {restore}"])
