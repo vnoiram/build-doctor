@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "build-doctor report v1",
+  "type": "object",
+  "required": ["schema_version", "tool", "tool_version", "time_utc", "mode", "target", "parameters",
+               "coverage", "checks", "facts", "summary", "records", "execution", "exit_code"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "tool": {"const": "build-doctor"},
+    "tool_version": {"type": "string"},
+    "time_utc": {"type": "string"},
+    "mode": {"enum": ["env", "inspect", "explain", "build"]},
+    "target": {"type": ["string", "null"]},
+    "parameters": {"type": "object"},
+    "coverage": {
+      "type": "object",
+      "required": ["completed", "unknown", "skipped"],
+      "properties": {
+        "completed": {"type": "integer"},
+        "unknown": {"type": "integer"},
+        "skipped": {"type": "integer"}
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "outcome"],
+        "properties": {
+          "id": {"type": "string"},
+          "outcome": {"enum": ["completed", "unknown", "skipped", "not_applicable"]},
+          "reason_code": {"type": "string"},
+          "detail": {"type": "string"}
+        }
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "value", "time_utc", "complete"],
+        "properties": {
+          "id": {"type": "string"},
+          "source": {"type": "string"},
+          "location": {"type": ["string", "null"]},
+          "time_utc": {"type": "string"},
+          "complete": {"type": "boolean"}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["info", "warning", "error"],
+      "properties": {
+        "info": {"type": "integer"},
+        "warning": {"type": "integer"},
+        "error": {"type": "integer"}
+      }
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "rule_id", "status", "severity", "title", "evidence_refs", "meaning",
+                     "limit", "next", "related_findings"],
+        "properties": {
+          "id": {"type": "string"},
+          "rule_id": {"type": "string"},
+          "status": {"enum": ["CONFIRMED", "CONFIGURED", "CANDIDATE", "UNKNOWN"]},
+          "severity": {"enum": ["info", "warning", "error"]},
+          "title": {"type": "string"},
+          "evidence_refs": {"type": "array", "items": {"type": "string"}},
+          "meaning": {"type": "string"},
+          "limit": {"type": "string"},
+          "next": {"type": "array", "items": {"type": "string"}},
+          "related_findings": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["build_started", "child_exit_code"],
+      "properties": {
+        "build_started": {"type": "boolean"},
+        "child_exit_code": {"type": ["integer", "null"]}
+      }
+    },
+    "exit_code": {"enum": [0, 1, 3]}
+  }
+}
