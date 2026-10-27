@@ -82,6 +82,9 @@ def test_zipapp_builds_and_starts(tmp_path):
         capture_output=True,
     )
     res = subprocess.run(
-        [sys.executable, str(out), "--version"], capture_output=True, text=True
+        [sys.executable, str(out), "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert res.returncode == 0 and "build-doctor" in res.stdout
