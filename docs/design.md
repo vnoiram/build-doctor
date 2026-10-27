@@ -1,6 +1,6 @@
 # PowerShell / C# Build Doctor 設計書
 
-状態: 第1〜3段階を実装済み。第4段階は PE/ELF の依存名抽出、CLR メタデータ(AssemblyRef/P/Invoke)、単体配布まで対応。ARM64・Windows x86 の実機検証は未実施。
+状態: 第1〜3段階を実装済み。第4段階は PE/ELF の依存名抽出、CLR メタデータ(AssemblyRef/P/Invoke)、ReadyToRun・apphost の識別、単体配布まで対応。ARM64・Windows x86 の実機検証は未実施。
 
 ## 1. 目的と提供価値
 

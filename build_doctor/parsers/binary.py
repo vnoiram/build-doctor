@@ -20,6 +20,7 @@ ELF_MACHINES = {3: "x86", 62: "x64", 183: "arm64", 40: "arm", 243: "riscv"}
 ELF_TYPES = {1: "relocatable", 2: "executable", 3: "shared", 4: "core"}
 
 COMIMAGE_ILONLY = 0x1
+COMIMAGE_IL_LIBRARY = 0x4
 COMIMAGE_32BITREQUIRED = 0x2
 COMIMAGE_STRONGNAMESIGNED = 0x8
 COMIMAGE_NATIVE_ENTRYPOINT = 0x10
@@ -27,6 +28,9 @@ COMIMAGE_32BITPREFERRED = 0x20000
 
 MAX_SECTIONS = 96
 MAX_DEPS = 512
+APPHOST_SCAN_LIMIT = 4 * 1024 * 1024
+# apphost テンプレートに埋め込まれたアプリ DLL パスのプレースホルダー(SHA-256 ハッシュの前半)
+APPHOST_MARKER = b"c3ab8ff13720e8ad9047dd39466b3c89"
 
 
 class _Reader:
@@ -123,6 +127,10 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
                 raise FormatError("CORRUPT", "CLR ヘッダーの cb が不正")
             flags = r.u32(cor + 16)
             md_rva, md_size = struct.unpack("<II", r.read(cor + 8, 8))
+            # ManagedNativeHeader(cor+64): ReadyToRun イメージは IL に加えネイティブコードを持つ
+            mn_rva, mn_size = (
+                struct.unpack("<II", r.read(cor + 64, 8)) if cb >= 72 else (0, 0)
+            )
             metadata, metadata_error = None, None
             if md_rva and md_size:
                 try:
@@ -139,6 +147,9 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
                 "prefers_32bit": bool(flags & COMIMAGE_32BITPREFERRED),
                 "strong_name_signed": bool(flags & COMIMAGE_STRONGNAMESIGNED),
                 "native_entrypoint": bool(flags & COMIMAGE_NATIVE_ENTRYPOINT),
+                "ready_to_run": bool(
+                    mn_rva and mn_size and flags & COMIMAGE_IL_LIBRARY
+                ),
             }
 
     imports: list[str] = []
@@ -165,7 +176,15 @@ def parse_pe(f: BinaryIO, size: int) -> dict:
         "imports_error": imports_error,
     }
     result.update(_classify_pe(machine, clr))
+    result["apphost"] = clr is None and _is_apphost(r, size)
     return result
+
+
+def _is_apphost(r: _Reader, size: int) -> bool:
+    """.NET apphost はテンプレート内のプレースホルダーで識別する(小さいネイティブ EXE のみ走査)。"""
+    if size > APPHOST_SCAN_LIMIT:
+        return False
+    return APPHOST_MARKER in r.read(0, size)
 
 
 def _cstring(r: _Reader, off: int, limit: int = 260) -> str:
@@ -251,6 +270,9 @@ def _classify_pe(machine: str, clr: dict | None) -> dict:
     """arch: 実行に必要な CPU。PE32 であるだけで x86 専用とはしない。"""
     if clr is None:
         return {"arch": machine, "kind": "native", "mixed_mode": False}
+    if clr["ready_to_run"]:
+        # R2R はターゲット CPU 向けのネイティブコードを含む。ILONLY が立たないが mixed-mode ではない
+        return {"arch": machine, "kind": "managed", "mixed_mode": False}
     if machine == "x86":
         if clr["requires_32bit"] or not clr["ilonly"]:
             arch = "x86"

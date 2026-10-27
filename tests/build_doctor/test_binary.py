@@ -119,3 +119,15 @@ def test_corrupt_metadata_is_reported_not_raised():
     info = parse(make_pe(0x14C, clr_flags=0x1, metadata=bytes(md)))
     assert info["clr"]["metadata"] is None
     assert info["clr"]["metadata_error"]["reason_code"] == "CORRUPT"
+
+
+def test_ready_to_run_is_not_mixed_mode():
+    info = parse(make_pe(0x8664, pe32plus=True, clr_flags=0x4, r2r=True))
+    assert info["clr"]["ready_to_run"] and not info["mixed_mode"]
+    assert info["arch"] == "x64"
+
+
+def test_apphost_marker_detected_only_for_native():
+    marker = b"c3ab8ff13720e8ad9047dd39466b3c89"
+    assert parse(make_pe(0x8664, pe32plus=True, dll=False, trailer=marker))["apphost"]
+    assert not parse(make_pe(0x8664, pe32plus=True, dll=False))["apphost"]

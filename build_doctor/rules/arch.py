@@ -12,9 +12,15 @@ CPU_ARCHES = {"x86", "x64", "arm64", "arm"}
 def describe(info: dict) -> str:
     arch = info["arch"]
     if info.get("kind") == "managed":
-        extra = "mixed-mode" if info.get("mixed_mode") else "IL"
+        if info.get("mixed_mode"):
+            extra = "mixed-mode"
+        elif (info.get("clr") or {}).get("ready_to_run"):
+            extra = "ReadyToRun"
+        else:
+            extra = "IL"
         return f"{arch} ({info['pe_format']}, 管理アセンブリ/{extra})"
-    return f"{arch} ({info['format']}, ネイティブ)"
+    extra = "apphost" if info.get("apphost") else "ネイティブ"
+    return f"{arch} ({info['format']}, {extra})"
 
 
 def evaluate_binary(
